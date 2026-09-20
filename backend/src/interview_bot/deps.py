@@ -2,8 +2,8 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from .config import Settings, get_settings
-from .llm import LLMClient
+from interview_bot.config import Settings, get_settings
+from interview_bot.llm import LLMClient
 
 
 def get_llm_client(request: Request) -> LLMClient:

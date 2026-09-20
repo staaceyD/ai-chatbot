@@ -5,9 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .config import Settings, get_settings
-from .deps import LLMClientDep
-from .llm import LLMClient, build_llm_client
+from interview_bot.config import Settings, get_settings
+from interview_bot.deps import LLMClientDep
+from interview_bot.llm import LLMClient, build_llm_client
 
 
 class LLMInfo(BaseModel):

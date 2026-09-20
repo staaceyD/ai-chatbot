@@ -1,7 +1,7 @@
-from ..config import Settings
-from .base import LLMClient
-from .echo import EchoClient
-from .ollama import OllamaClient
+from interview_bot.config import Settings
+from interview_bot.llm.base import LLMClient
+from interview_bot.llm.echo import EchoClient
+from interview_bot.llm.ollama import OllamaClient
 
 
 def build_llm_client(settings: Settings) -> LLMClient:

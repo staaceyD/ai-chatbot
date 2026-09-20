@@ -1,6 +1,6 @@
 import json
 
-from .base import LLMError
+from interview_bot.llm.base import LLMError
 
 
 class EchoClient:
