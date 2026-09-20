@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120.0
 
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:8b"
+    ollama_model: str = "qwen3:4b-instruct"
 
     cors_origins: list[str] = ["http://localhost:5173"]
 

@@ -13,6 +13,10 @@ class EchoClient:
         self._replies = list(replies or [])
         self.calls: list[dict[str, object]] = []
 
+    def queue(self, *replies: str) -> None:
+        """Set the replies the next completions return, in order."""
+        self._replies = list(replies)
+
     async def complete(self, *, system: str, prompt: str, json_mode: bool = False) -> str:
         self.calls.append({"system": system, "prompt": prompt, "json_mode": json_mode})
         if self._replies:
