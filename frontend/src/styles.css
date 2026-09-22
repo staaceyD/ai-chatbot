@@ -1,0 +1,142 @@
+:root {
+  --bg: #f7f7f8;
+  --card: #ffffff;
+  --text: #1a1a1c;
+  --muted: #6b6b73;
+  --border: #e2e2e6;
+  --accent: #2f6df6;
+  --good: #1f7a45;
+  --bad: #a13b2a;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --card: #202024;
+    --text: #ececf1;
+    --muted: #9b9ba4;
+    --border: #32323a;
+    --accent: #6f9bff;
+    --good: #5fd08a;
+    --bad: #ff8a72;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin: 0 0 1rem;
+}
+
+h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 1rem 0 0.35rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+select,
+textarea {
+  width: 100%;
+  padding: 0.6rem;
+  margin-bottom: 1rem;
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.6rem 1.1rem;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.tag {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.5rem;
+}
+
+.score {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.covered h3 {
+  color: var(--good);
+}
+
+.missed h3 {
+  color: var(--bad);
+}
+
+[role="status"],
+[role="alert"] {
+  margin-top: 1rem;
+  color: var(--muted);
+}
+
+[role="alert"] {
+  color: var(--bad);
+}
