@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local interview history
+*.db
+*.db-wal
+*.db-shm

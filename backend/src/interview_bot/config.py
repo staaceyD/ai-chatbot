@@ -1,9 +1,11 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LLMBackend = Literal["ollama", "echo"]
+StoreBackend = Literal["sqlite", "memory"]
 
 
 class Settings(BaseSettings):
@@ -14,6 +16,9 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b-instruct"
+
+    store_backend: StoreBackend = "sqlite"
+    sqlite_path: Path = Path("interview_bot.db")
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
