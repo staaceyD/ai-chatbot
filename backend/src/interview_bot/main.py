@@ -4,23 +4,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from interview_bot.api import router
 from interview_bot.config import Settings, get_settings
-from interview_bot.deps import LLMClientDep
 from interview_bot.llm import LLMClient, LLMError, build_llm_client
 from interview_bot.store import InMemorySessionStore, SessionStore
-
-
-class LLMInfo(BaseModel):
-    backend: str
-    model: str
-
-
-class Health(BaseModel):
-    status: str
-    llm: LLMInfo
 
 
 def create_app(
@@ -53,10 +41,6 @@ def create_app(
             status_code=status.HTTP_502_BAD_GATEWAY,
             content={"detail": f"The model is unavailable: {exc}"},
         )
-
-    @app.get("/health")
-    async def health(client: LLMClientDep) -> Health:
-        return Health(status="ok", llm=LLMInfo(backend=client.name, model=client.model))
 
     app.include_router(router)
     return app
