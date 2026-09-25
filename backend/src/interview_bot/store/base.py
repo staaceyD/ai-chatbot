@@ -16,6 +16,11 @@ class Session:
     def asked_prompts(self) -> list[str]:
         return [question.prompt for question in self.questions.values()]
 
+    @property
+    def latest_question(self) -> Question | None:
+        """The question to return to when an interview is resumed."""
+        return next(reversed(self.questions.values()), None)
+
 
 def new_session_id() -> str:
     return str(uuid4())

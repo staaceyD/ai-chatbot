@@ -140,3 +140,10 @@ ul {
 [role="alert"] {
   color: var(--bad);
 }
+
+button.secondary {
+  margin-top: 1rem;
+  background: none;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}

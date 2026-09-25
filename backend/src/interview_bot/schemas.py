@@ -35,6 +35,13 @@ class QuestionResponse(BaseModel):
     difficulty: Difficulty
 
 
+class SessionStateResponse(BaseModel):
+    session_id: str
+    topic: Topic
+    difficulty: Difficulty
+    current_question: QuestionResponse | None
+
+
 class AnswerRequest(BaseModel):
     question_id: str
     answer: Answer

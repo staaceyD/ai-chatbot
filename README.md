@@ -54,6 +54,9 @@ npm run dev
 Open http://localhost:5173 and pick a topic. The API is on
 http://localhost:8000, with interactive docs on http://localhost:8000/docs.
 
+Refreshing the page picks the interview back up where you left it. Use
+**Start over** to drop it and choose a different topic.
+
 Answers are graded by a model running on your machine, so expect each
 question and each grade to take a few seconds.
 
@@ -85,6 +88,9 @@ Topics are `python`, `react` and `javascript`; difficulties are `junior`,
 Sessions are stored in a SQLite file (`backend/interview_bot.db` by default)
 and survive a restart, so an interview keeps going across a backend reload.
 Delete the file to start clean.
+
+`GET /sessions/{id}` returns a session with the question you were last asked,
+which is how the browser resumes after a refresh.
 
 ## Configuration
 
