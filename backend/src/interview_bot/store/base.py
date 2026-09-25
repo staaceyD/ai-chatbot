@@ -17,8 +17,14 @@ class Session:
         return [question.prompt for question in self.questions.values()]
 
 
+def new_session_id() -> str:
+    return str(uuid4())
+
+
 class SessionStore(Protocol):
-    """Async so a database-backed store can replace this without touching callers."""
+    """Async so a database-backed store can replace the in-memory one."""
+
+    async def initialize(self) -> None: ...
 
     async def create(self, *, topic: Topic, difficulty: Difficulty) -> Session: ...
 
@@ -26,18 +32,4 @@ class SessionStore(Protocol):
 
     async def add_question(self, session_id: str, question: Question) -> None: ...
 
-
-class InMemorySessionStore:
-    def __init__(self) -> None:
-        self._sessions: dict[str, Session] = {}
-
-    async def create(self, *, topic: Topic, difficulty: Difficulty) -> Session:
-        session = Session(id=str(uuid4()), topic=topic, difficulty=difficulty)
-        self._sessions[session.id] = session
-        return session
-
-    async def get(self, session_id: str) -> Session | None:
-        return self._sessions.get(session_id)
-
-    async def add_question(self, session_id: str, question: Question) -> None:
-        self._sessions[session_id].questions[question.id] = question
+    async def aclose(self) -> None: ...

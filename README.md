@@ -80,7 +80,11 @@ curl -s -X POST http://localhost:8000/sessions/$SESSION/answers \
 ```
 
 Topics are `python`, `react` and `javascript`; difficulties are `junior`,
-`mid` and `senior`. Sessions live in memory and are lost on restart.
+`mid` and `senior`.
+
+Sessions are stored in a SQLite file (`backend/interview_bot.db` by default)
+and survive a restart, so an interview keeps going across a backend reload.
+Delete the file to start clean.
 
 ## Configuration
 
@@ -93,6 +97,8 @@ have defaults, so you only need to set what you want to change.
 | `INTERVIEW_BOT_OLLAMA_MODEL` | `qwen3:4b-instruct` | Which Ollama model to use |
 | `INTERVIEW_BOT_OLLAMA_BASE_URL` | `http://localhost:11434` | Where Ollama is listening |
 | `INTERVIEW_BOT_LLM_TIMEOUT_SECONDS` | `120` | Give up on a slow model after this long |
+| `INTERVIEW_BOT_STORE_BACKEND` | `sqlite` | Where sessions live: `sqlite`, or `memory` to drop them on exit |
+| `INTERVIEW_BOT_SQLITE_PATH` | `interview_bot.db` | SQLite file, relative to where the backend runs |
 | `INTERVIEW_BOT_CORS_ORIGINS` | `["http://localhost:5173"]` | Origins allowed to call the API |
 
 The frontend reads `VITE_API_URL` (default `http://localhost:8000`) to find

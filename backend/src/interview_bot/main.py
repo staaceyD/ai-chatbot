@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from interview_bot.api import router
 from interview_bot.config import Settings, get_settings
 from interview_bot.llm import LLMClient, LLMError, build_llm_client
-from interview_bot.store import InMemorySessionStore, SessionStore
+from interview_bot.store import SessionStore, build_session_store
 
 
 def create_app(
@@ -21,11 +21,13 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.llm_client = llm_client or build_llm_client(settings)
-        app.state.session_store = session_store or InMemorySessionStore()
+        app.state.session_store = session_store or build_session_store(settings)
+        await app.state.session_store.initialize()
         try:
             yield
         finally:
             await app.state.llm_client.aclose()
+            await app.state.session_store.aclose()
 
     app = FastAPI(title="Interview Bot", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
