@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from interview_bot.config import Settings
-from interview_bot.domain import Difficulty, Question, Topic
+from interview_bot.domain import Difficulty, Grade, Question, Topic
 from interview_bot.store import (
     InMemorySessionStore,
     SessionStore,
@@ -62,6 +62,34 @@ async def test_reopening_does_not_wipe_existing_data(tmp_path: Path) -> None:
     await second_run.aclose()
 
     assert loaded.asked_prompts == ["first", "second"]
+
+
+async def test_grades_survive_a_restart(tmp_path: Path) -> None:
+    path = tmp_path / "interview_bot.db"
+
+    first_run = await open_store(path)
+    session = await first_run.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    await first_run.add_question(session.id, a_question("What is the GIL?"))
+    await first_run.record_grade(
+        session.id, "What is the GIL?", Grade(score=4, verdict="Good answer.")
+    )
+    await first_run.aclose()
+
+    second_run = await open_store(path)
+    loaded = await second_run.get(session.id)
+    await second_run.aclose()
+
+    assert loaded.latest_grade == Grade(score=4, verdict="Good answer.")
+
+
+async def test_a_grade_needs_an_existing_question(tmp_path: Path) -> None:
+    store = await open_store(tmp_path / "interview_bot.db")
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+
+    with pytest.raises(Exception, match="FOREIGN KEY"):
+        await store.record_grade(session.id, "no-such-question", Grade(score=1, verdict="?"))
+
+    await store.aclose()
 
 
 async def test_creates_the_database_file(tmp_path: Path) -> None:

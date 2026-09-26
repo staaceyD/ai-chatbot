@@ -89,8 +89,9 @@ Sessions are stored in a SQLite file (`backend/interview_bot.db` by default)
 and survive a restart, so an interview keeps going across a backend reload.
 Delete the file to start clean.
 
-`GET /sessions/{id}` returns a session with the question you were last asked,
-which is how the browser resumes after a refresh.
+`GET /sessions/{id}` returns a session with the question you were last asked
+and the grade for it if you already answered, which is how the browser resumes
+after a refresh without re-asking a question you have finished.
 
 ## Configuration
 

@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,6 +29,7 @@ const sessionState: SessionState = {
   topic: "python",
   difficulty: "mid",
   current_question: question,
+  current_grade: null,
 };
 
 function fakeApi(overrides: Partial<Api> = {}): Api {
@@ -224,10 +226,30 @@ describe("resuming", () => {
 
     render(<App api={api} />);
 
-    expect(
-      await screen.findByRole("button", { name: /start interview/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start interview/i })).toBeInTheDocument();
     expect(api.resumeSession).not.toHaveBeenCalled();
+  });
+
+  it("paints the picker without a restoring flash when nothing was remembered", () => {
+    // The first paint happens before effects run, so only what renderToStaticMarkup
+    // produces is what a first-time visitor actually sees.
+    const markup = renderToStaticMarkup(<App api={fakeApi()} />);
+
+    expect(markup).toContain("Start interview");
+    expect(markup).not.toContain("Restoring");
+  });
+
+  it("restores the grade when the question was already answered", async () => {
+    localStorage.setItem(STORAGE_KEY, "s1");
+    const api = fakeApi({
+      resumeSession: vi.fn().mockResolvedValue({ ...sessionState, current_grade: grade }),
+    });
+
+    render(<App api={api} />);
+
+    expect(await screen.findByTestId("score")).toHaveTextContent("4 / 5");
+    expect(screen.getByRole("button", { name: /next question/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/your answer/i)).not.toBeInTheDocument();
   });
 
   it("remembers the session id when an interview starts", async () => {
@@ -266,6 +288,8 @@ describe("resuming", () => {
       /could not restore your last interview/i,
     );
     expect(screen.getByRole("button", { name: /start interview/i })).toBeInTheDocument();
+    // The backend may still have the session, so the id has to survive.
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("s1");
   });
 
   it("ignores a remembered session that never got a question", async () => {

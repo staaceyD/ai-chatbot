@@ -66,7 +66,42 @@ async def test_resume_returns_the_question_in_progress(api: AsyncClient, llm: Ec
         "topic": "python",
         "difficulty": "mid",
         "current_question": asked,
+        "current_grade": None,
     }
+
+
+async def test_resume_returns_the_grade_already_given(api: AsyncClient, llm: EchoClient) -> None:
+    llm.queue(question_reply(), grade_reply(score=4, verdict="Good answer."))
+    session_id = await start_session(api)
+    question_id = (await api.post(f"/sessions/{session_id}/questions")).json()["question_id"]
+    await api.post(
+        f"/sessions/{session_id}/answers",
+        json={"question_id": question_id, "answer": "It is a mutex."},
+    )
+
+    resumed = (await api.get(f"/sessions/{session_id}")).json()
+
+    assert resumed["current_question"]["question_id"] == question_id
+    assert resumed["current_grade"]["score"] == 4
+    assert resumed["current_grade"]["verdict"] == "Good answer."
+
+
+async def test_resume_has_no_grade_before_the_question_is_answered(
+    api: AsyncClient, llm: EchoClient
+) -> None:
+    llm.queue(question_reply("first"), grade_reply(), question_reply("second"))
+    session_id = await start_session(api)
+    question_id = (await api.post(f"/sessions/{session_id}/questions")).json()["question_id"]
+    await api.post(
+        f"/sessions/{session_id}/answers",
+        json={"question_id": question_id, "answer": "It is a mutex."},
+    )
+    await api.post(f"/sessions/{session_id}/questions")
+
+    resumed = (await api.get(f"/sessions/{session_id}")).json()
+
+    assert resumed["current_question"]["prompt"] == "second"
+    assert resumed["current_grade"] is None
 
 
 async def test_resume_returns_the_latest_question(api: AsyncClient, llm: EchoClient) -> None:

@@ -15,7 +15,9 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [question, setQuestion] = useState<Question | null>(null);
   const [grade, setGrade] = useState<Grade | null>(null);
   const [busy, setBusy] = useState(false);
-  const [resuming, setResuming] = useState(true);
+  // Read storage during the first render, so a visitor with nothing stored
+  // never sees a flash of the restoring splash.
+  const [resuming, setResuming] = useState(() => recallSession() !== null);
   const [error, setError] = useState<string | null>(null);
 
   const resumed = useRef(false);
@@ -42,10 +44,16 @@ export function App({ api = defaultApi }: { api?: Api }) {
         setTopic(state.topic);
         setDifficulty(state.difficulty);
         setQuestion(state.current_question);
+        // Restored alongside the question, so answering it again is never the
+        // only way forward after a refresh.
+        setGrade(state.current_grade);
       } catch (caught) {
-        forgetSession();
-        if (!(caught instanceof ApiError) || caught.status !== 404) {
-          setError("Could not restore your last interview, so this is a fresh start.");
+        // Only a 404 proves the session is gone. Forgetting the id on a passing
+        // failure would strand an interview the backend still has.
+        if (caught instanceof ApiError && caught.status === 404) {
+          forgetSession();
+        } else {
+          setError("Could not restore your last interview. Refresh to try again.");
         }
       } finally {
         setResuming(false);

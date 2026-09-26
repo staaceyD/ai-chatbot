@@ -2,6 +2,10 @@ import type { Difficulty, Grade, Question, Session, SessionState, Topic } from "
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
+// A resume gates the whole screen, so it must not hang forever on a backend
+// that accepts the connection and then never answers.
+const RESUME_TIMEOUT_MS = 8_000;
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -45,7 +49,9 @@ async function errorMessage(response: Response): Promise<string> {
 
 export const api = {
   resumeSession: (sessionId: string) =>
-    request<SessionState>(`/sessions/${sessionId}`),
+    request<SessionState>(`/sessions/${sessionId}`, {
+      signal: AbortSignal.timeout(RESUME_TIMEOUT_MS),
+    }),
 
   startSession: (topic: Topic, difficulty: Difficulty) =>
     post<Session>("/sessions", { topic, difficulty }),

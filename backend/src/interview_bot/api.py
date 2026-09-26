@@ -56,6 +56,7 @@ async def resume_session(session_id: str, store: SessionStoreDep) -> SessionStat
         topic=session.topic,
         difficulty=session.difficulty,
         current_question=_as_response(current) if current else None,
+        current_grade=session.latest_grade,
     )
 
 
@@ -89,4 +90,6 @@ async def submit_answer(
     if question is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown question for this session")
 
-    return await interviewer.grade(question=question, answer=body.answer)
+    grade = await interviewer.grade(question=question, answer=body.answer)
+    await store.record_grade(session.id, question.id, grade)
+    return grade

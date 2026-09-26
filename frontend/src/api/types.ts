@@ -29,6 +29,7 @@ export type SessionState = {
   topic: Topic;
   difficulty: Difficulty;
   current_question: Question | null;
+  current_grade: Grade | null;
 };
 
 export const MAX_SCORE = 5;
