@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 
 from interview_bot.api import router
 from interview_bot.config import Settings, get_settings
+from interview_bot.explainer import Explainer
+from interview_bot.interviewer import Interviewer
 from interview_bot.llm import LLMClient, LLMError, build_llm_client
 from interview_bot.store import SessionStore, build_session_store
 
@@ -23,9 +25,15 @@ def create_app(
         app.state.llm_client = llm_client or build_llm_client(settings)
         app.state.session_store = session_store or build_session_store(settings)
         await app.state.session_store.initialize()
+        app.state.explainer = Explainer(
+            Interviewer(app.state.llm_client),
+            app.state.session_store,
+            prefetch=settings.prefetch_explanations,
+        )
         try:
             yield
         finally:
+            await app.state.explainer.aclose()
             await app.state.llm_client.aclose()
             await app.state.session_store.aclose()
 

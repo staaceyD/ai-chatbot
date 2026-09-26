@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import uuid4
 
-from interview_bot.domain import Difficulty, Grade, Question, Topic
+from interview_bot.domain import Difficulty, Explanation, Grade, Question, Topic
 
 
 @dataclass
@@ -12,6 +12,7 @@ class Session:
     difficulty: Difficulty
     questions: dict[str, Question] = field(default_factory=dict)
     grades: dict[str, Grade] = field(default_factory=dict)
+    explanations: dict[str, Explanation] = field(default_factory=dict)
 
     @property
     def asked_prompts(self) -> list[str]:
@@ -27,6 +28,12 @@ class Session:
         """The grade for `latest_question`, so a resume does not re-ask it."""
         current = self.latest_question
         return self.grades.get(current.id) if current else None
+
+    @property
+    def latest_explanation(self) -> Explanation | None:
+        """The worked answer already read, so a resume does not regenerate it."""
+        current = self.latest_question
+        return self.explanations.get(current.id) if current else None
 
 
 def new_session_id() -> str:
@@ -45,5 +52,9 @@ class SessionStore(Protocol):
     async def add_question(self, session_id: str, question: Question) -> None: ...
 
     async def record_grade(self, session_id: str, question_id: str, grade: Grade) -> None: ...
+
+    async def record_explanation(
+        self, session_id: str, question_id: str, explanation: Explanation
+    ) -> None: ...
 
     async def aclose(self) -> None: ...

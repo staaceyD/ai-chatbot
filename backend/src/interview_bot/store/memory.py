@@ -1,4 +1,4 @@
-from interview_bot.domain import Difficulty, Grade, Question, Topic
+from interview_bot.domain import Difficulty, Explanation, Grade, Question, Topic
 from interview_bot.store.base import Session, new_session_id
 
 
@@ -24,6 +24,11 @@ class InMemorySessionStore:
 
     async def record_grade(self, session_id: str, question_id: str, grade: Grade) -> None:
         self._sessions[session_id].grades[question_id] = grade
+
+    async def record_explanation(
+        self, session_id: str, question_id: str, explanation: Explanation
+    ) -> None:
+        self._sessions[session_id].explanations[question_id] = explanation
 
     async def aclose(self) -> None:
         return None
