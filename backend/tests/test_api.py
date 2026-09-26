@@ -53,6 +53,112 @@ async def test_previous_questions_are_sent_to_the_generator(
     assert "first question" in llm.calls[1]["prompt"]
 
 
+async def test_resume_returns_the_question_in_progress(api: AsyncClient, llm: EchoClient) -> None:
+    llm.queue(question_reply("What is the GIL?"))
+    session_id = await start_session(api)
+    asked = (await api.post(f"/sessions/{session_id}/questions")).json()
+
+    resumed = await api.get(f"/sessions/{session_id}")
+
+    assert resumed.status_code == 200
+    assert resumed.json() == {
+        "session_id": session_id,
+        "topic": "python",
+        "difficulty": "mid",
+        "current_question": asked,
+        "current_grade": None,
+    }
+
+
+async def test_resume_returns_the_grade_already_given(api: AsyncClient, llm: EchoClient) -> None:
+    llm.queue(question_reply(), grade_reply(score=4, verdict="Good answer."))
+    session_id = await start_session(api)
+    question_id = (await api.post(f"/sessions/{session_id}/questions")).json()["question_id"]
+    await api.post(
+        f"/sessions/{session_id}/answers",
+        json={"question_id": question_id, "answer": "It is a mutex."},
+    )
+
+    resumed = (await api.get(f"/sessions/{session_id}")).json()
+
+    assert resumed["current_question"]["question_id"] == question_id
+    assert resumed["current_grade"]["score"] == 4
+    assert resumed["current_grade"]["verdict"] == "Good answer."
+
+
+async def test_resume_has_no_grade_before_the_question_is_answered(
+    api: AsyncClient, llm: EchoClient
+) -> None:
+    llm.queue(question_reply("first"), grade_reply(), question_reply("second"))
+    session_id = await start_session(api)
+    question_id = (await api.post(f"/sessions/{session_id}/questions")).json()["question_id"]
+    await api.post(
+        f"/sessions/{session_id}/answers",
+        json={"question_id": question_id, "answer": "It is a mutex."},
+    )
+    await api.post(f"/sessions/{session_id}/questions")
+
+    resumed = (await api.get(f"/sessions/{session_id}")).json()
+
+    assert resumed["current_question"]["prompt"] == "second"
+    assert resumed["current_grade"] is None
+
+
+async def test_resume_returns_the_latest_question(api: AsyncClient, llm: EchoClient) -> None:
+    llm.queue(question_reply("first"), question_reply("second"))
+    session_id = await start_session(api)
+    await api.post(f"/sessions/{session_id}/questions")
+    await api.post(f"/sessions/{session_id}/questions")
+
+    resumed = await api.get(f"/sessions/{session_id}")
+
+    assert resumed.json()["current_question"]["prompt"] == "second"
+
+
+async def test_resume_before_any_question_has_no_current_question(api: AsyncClient) -> None:
+    session_id = await start_session(api)
+
+    resumed = await api.get(f"/sessions/{session_id}")
+
+    assert resumed.status_code == 200
+    assert resumed.json()["current_question"] is None
+
+
+async def test_resume_never_leaks_the_key_points(api: AsyncClient, llm: EchoClient) -> None:
+    llm.queue(question_reply(key_points=["secret point"]))
+    session_id = await start_session(api)
+    await api.post(f"/sessions/{session_id}/questions")
+
+    resumed = await api.get(f"/sessions/{session_id}")
+
+    assert "secret point" not in resumed.text
+    assert "key_points" not in resumed.text
+
+
+async def test_resuming_an_unknown_session_is_not_found(api: AsyncClient) -> None:
+    response = await api.get("/sessions/nope")
+
+    assert response.status_code == 404
+
+
+async def test_a_resumed_question_can_still_be_answered(api: AsyncClient, llm: EchoClient) -> None:
+    llm.queue(question_reply(), grade_reply(score=5))
+    session_id = await start_session(api)
+    await api.post(f"/sessions/{session_id}/questions")
+    resumed = (await api.get(f"/sessions/{session_id}")).json()
+
+    graded = await api.post(
+        f"/sessions/{session_id}/answers",
+        json={
+            "question_id": resumed["current_question"]["question_id"],
+            "answer": "It is a mutex.",
+        },
+    )
+
+    assert graded.status_code == 200
+    assert graded.json()["score"] == 5
+
+
 async def test_session_defaults_to_mid_difficulty(api: AsyncClient) -> None:
     response = await api.post("/sessions", json={"topic": "react"})
 

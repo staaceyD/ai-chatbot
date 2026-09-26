@@ -1,26 +1,40 @@
-import type { Difficulty, Grade, Question, Session, Topic } from "./types";
+import type { Difficulty, Grade, Question, Session, SessionState, Topic } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-export class ApiError extends Error {}
+// A resume gates the whole screen, so it must not hang forever on a backend
+// that accepts the connection and then never answers.
+const RESUME_TIMEOUT_MS = 8_000;
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${BASE_URL}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body ?? {}),
-    });
+    response = await fetch(`${BASE_URL}${path}`, init);
   } catch {
     throw new ApiError("Cannot reach the server. Is the backend running?");
   }
 
   if (!response.ok) {
-    throw new ApiError(await errorMessage(response));
+    throw new ApiError(await errorMessage(response), response.status);
   }
   return (await response.json()) as T;
 }
+
+const post = <T,>(path: string, body?: unknown): Promise<T> =>
+  request<T>(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
 
 async function errorMessage(response: Response): Promise<string> {
   try {
@@ -34,6 +48,11 @@ async function errorMessage(response: Response): Promise<string> {
 }
 
 export const api = {
+  resumeSession: (sessionId: string) =>
+    request<SessionState>(`/sessions/${sessionId}`, {
+      signal: AbortSignal.timeout(RESUME_TIMEOUT_MS),
+    }),
+
   startSession: (topic: Topic, difficulty: Difficulty) =>
     post<Session>("/sessions", { topic, difficulty }),
 

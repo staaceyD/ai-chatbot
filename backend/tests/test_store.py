@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from interview_bot.domain import Difficulty, Question, Topic
+from interview_bot.domain import Difficulty, Grade, Question, Topic
 from interview_bot.store import InMemorySessionStore, SessionStore, SQLiteSessionStore
 
 
@@ -83,3 +83,34 @@ async def test_question_round_trips_intact(store: SessionStore) -> None:
     await store.add_question(session.id, question)
 
     assert (await store.get(session.id)).questions["q1"] == question
+
+
+async def test_grade_round_trips_with_its_question(store: SessionStore) -> None:
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    await store.add_question(session.id, a_question("What is the GIL?"))
+    grade = Grade(score=4, verdict="Good answer.", covered=["a mutex"], missed=["I/O"])
+
+    await store.record_grade(session.id, "What is the GIL?", grade)
+
+    loaded = await store.get(session.id)
+    assert loaded.grades == {"What is the GIL?": grade}
+    assert loaded.latest_grade == grade
+
+
+async def test_regrading_replaces_the_previous_grade(store: SessionStore) -> None:
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    await store.add_question(session.id, a_question("q"))
+
+    await store.record_grade(session.id, "q", Grade(score=1, verdict="Thin."))
+    await store.record_grade(session.id, "q", Grade(score=5, verdict="Much better."))
+
+    assert (await store.get(session.id)).latest_grade.score == 5
+
+
+async def test_an_unanswered_latest_question_has_no_grade(store: SessionStore) -> None:
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    await store.add_question(session.id, a_question("first"))
+    await store.record_grade(session.id, "first", Grade(score=3, verdict="Fine."))
+    await store.add_question(session.id, a_question("second"))
+
+    assert (await store.get(session.id)).latest_grade is None

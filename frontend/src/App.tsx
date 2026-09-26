@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api as defaultApi, ApiError } from "./api/client";
 import type { Api } from "./api/client";
@@ -6,6 +6,7 @@ import type { Difficulty, Grade, Question, Topic } from "./api/types";
 import { GradeCard } from "./components/GradeCard";
 import { QuestionCard } from "./components/QuestionCard";
 import { TopicPicker } from "./components/TopicPicker";
+import { forgetSession, recallSession, rememberSession } from "./storage";
 
 export function App({ api = defaultApi }: { api?: Api }) {
   const [topic, setTopic] = useState<Topic>("python");
@@ -14,7 +15,51 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [question, setQuestion] = useState<Question | null>(null);
   const [grade, setGrade] = useState<Grade | null>(null);
   const [busy, setBusy] = useState(false);
+  // Read storage during the first render, so a visitor with nothing stored
+  // never sees a flash of the restoring splash.
+  const [resuming, setResuming] = useState(() => recallSession() !== null);
   const [error, setError] = useState<string | null>(null);
+
+  const resumed = useRef(false);
+
+  useEffect(() => {
+    if (resumed.current) return;
+    resumed.current = true;
+
+    const stored = recallSession();
+    if (stored === null) {
+      setResuming(false);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const state = await api.resumeSession(stored);
+        // A session with no question yet has nothing to return to.
+        if (state.current_question === null) {
+          forgetSession();
+          return;
+        }
+        setSessionId(state.session_id);
+        setTopic(state.topic);
+        setDifficulty(state.difficulty);
+        setQuestion(state.current_question);
+        // Restored alongside the question, so answering it again is never the
+        // only way forward after a refresh.
+        setGrade(state.current_grade);
+      } catch (caught) {
+        // Only a 404 proves the session is gone. Forgetting the id on a passing
+        // failure would strand an interview the backend still has.
+        if (caught instanceof ApiError && caught.status === 404) {
+          forgetSession();
+        } else {
+          setError("Could not restore your last interview. Refresh to try again.");
+        }
+      } finally {
+        setResuming(false);
+      }
+    })();
+  }, [api]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -34,6 +79,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     run(async () => {
       const session = await api.startSession(topic, difficulty);
       const first = await api.nextQuestion(session.session_id);
+      rememberSession(session.session_id);
       setSessionId(session.session_id);
       setQuestion(first);
       setGrade(null);
@@ -52,6 +98,23 @@ export function App({ api = defaultApi }: { api?: Api }) {
       if (!sessionId || !question) return;
       setGrade(await api.submitAnswer(sessionId, question.question_id, text));
     });
+
+  function startOver() {
+    forgetSession();
+    setSessionId(null);
+    setQuestion(null);
+    setGrade(null);
+    setError(null);
+  }
+
+  if (resuming) {
+    return (
+      <main>
+        <h1>Interview Bot</h1>
+        <p role="status">Restoring your interview…</p>
+      </main>
+    );
+  }
 
   return (
     <main>
@@ -78,6 +141,10 @@ export function App({ api = defaultApi }: { api?: Api }) {
             />
           )}
           {grade && <GradeCard grade={grade} disabled={busy} onNext={next} />}
+
+          <button type="button" className="secondary" onClick={startOver} disabled={busy}>
+            Start over
+          </button>
         </>
       )}
 

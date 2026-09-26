@@ -1,11 +1,12 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
 import { ApiError } from "../api/client";
 import type { Api } from "../api/client";
-import type { Grade, Question, Session } from "../api/types";
+import type { Grade, Question, Session, SessionState } from "../api/types";
 
 const session: Session = { session_id: "s1", topic: "python", difficulty: "mid" };
 
@@ -23,14 +24,25 @@ const grade: Grade = {
   missed: ["I/O-bound work"],
 };
 
+const sessionState: SessionState = {
+  session_id: "s1",
+  topic: "python",
+  difficulty: "mid",
+  current_question: question,
+  current_grade: null,
+};
+
 function fakeApi(overrides: Partial<Api> = {}): Api {
   return {
+    resumeSession: vi.fn().mockResolvedValue(sessionState),
     startSession: vi.fn().mockResolvedValue(session),
     nextQuestion: vi.fn().mockResolvedValue(question),
     submitAnswer: vi.fn().mockResolvedValue(grade),
     ...overrides,
   };
 }
+
+const STORAGE_KEY = "interview-bot.session-id";
 
 async function startInterview(api: Api) {
   const user = userEvent.setup();
@@ -42,6 +54,7 @@ async function startInterview(api: Api) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 describe("starting an interview", () => {
@@ -192,5 +205,118 @@ describe("errors", () => {
     await user.click(screen.getByRole("button", { name: /start interview/i }));
 
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+});
+
+
+describe("resuming", () => {
+  it("restores the question in progress from a remembered session", async () => {
+    localStorage.setItem(STORAGE_KEY, "s1");
+    const api = fakeApi();
+
+    render(<App api={api} />);
+
+    expect(await screen.findByText(question.prompt)).toBeInTheDocument();
+    expect(api.resumeSession).toHaveBeenCalledWith("s1");
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+
+  it("shows the picker when nothing was remembered", async () => {
+    const api = fakeApi();
+
+    render(<App api={api} />);
+
+    expect(screen.getByRole("button", { name: /start interview/i })).toBeInTheDocument();
+    expect(api.resumeSession).not.toHaveBeenCalled();
+  });
+
+  it("paints the picker without a restoring flash when nothing was remembered", () => {
+    // The first paint happens before effects run, so only what renderToStaticMarkup
+    // produces is what a first-time visitor actually sees.
+    const markup = renderToStaticMarkup(<App api={fakeApi()} />);
+
+    expect(markup).toContain("Start interview");
+    expect(markup).not.toContain("Restoring");
+  });
+
+  it("restores the grade when the question was already answered", async () => {
+    localStorage.setItem(STORAGE_KEY, "s1");
+    const api = fakeApi({
+      resumeSession: vi.fn().mockResolvedValue({ ...sessionState, current_grade: grade }),
+    });
+
+    render(<App api={api} />);
+
+    expect(await screen.findByTestId("score")).toHaveTextContent("4 / 5");
+    expect(screen.getByRole("button", { name: /next question/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/your answer/i)).not.toBeInTheDocument();
+  });
+
+  it("remembers the session id when an interview starts", async () => {
+    const user = await startInterview(fakeApi());
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("s1");
+    expect(user).toBeDefined();
+  });
+
+  it("forgets a session the backend no longer has", async () => {
+    localStorage.setItem(STORAGE_KEY, "gone");
+    const api = fakeApi({
+      resumeSession: vi.fn().mockRejectedValue(new ApiError("Unknown session", 404)),
+    });
+
+    render(<App api={api} />);
+
+    expect(
+      await screen.findByRole("button", { name: /start interview/i }),
+    ).toBeInTheDocument();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("explains itself when the backend cannot be reached", async () => {
+    localStorage.setItem(STORAGE_KEY, "s1");
+    const api = fakeApi({
+      resumeSession: vi
+        .fn()
+        .mockRejectedValue(new ApiError("Cannot reach the server.")),
+    });
+
+    render(<App api={api} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /could not restore your last interview/i,
+    );
+    expect(screen.getByRole("button", { name: /start interview/i })).toBeInTheDocument();
+    // The backend may still have the session, so the id has to survive.
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("s1");
+  });
+
+  it("ignores a remembered session that never got a question", async () => {
+    localStorage.setItem(STORAGE_KEY, "s1");
+    const api = fakeApi({
+      resumeSession: vi
+        .fn()
+        .mockResolvedValue({ ...sessionState, current_question: null }),
+    });
+
+    render(<App api={api} />);
+
+    expect(
+      await screen.findByRole("button", { name: /start interview/i }),
+    ).toBeInTheDocument();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe("starting over", () => {
+  it("returns to the picker and forgets the session", async () => {
+    const user = await startInterview(fakeApi());
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+
+    expect(screen.getByRole("button", { name: /start interview/i })).toBeInTheDocument();
+    expect(screen.queryByText(question.prompt)).not.toBeInTheDocument();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 });

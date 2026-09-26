@@ -42,6 +42,36 @@ describe("submitAnswer", () => {
   });
 });
 
+describe("resumeSession", () => {
+  it("bounds the request with a timeout, so a hung backend cannot block the app", async () => {
+    const fetchSpy = mockFetch({
+      json: async () => ({
+        session_id: "s1",
+        topic: "python",
+        difficulty: "mid",
+        current_question: null,
+        current_grade: null,
+      }),
+    });
+
+    await api.resumeSession("s1");
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("http://localhost:8000/sessions/s1");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.signal.aborted).toBe(false);
+  });
+
+  it("reports a timed-out resume as an unreachable server", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("signal timed out", "TimeoutError")),
+    );
+
+    await expect(api.resumeSession("s1")).rejects.toThrow("Cannot reach the server");
+  });
+});
+
 describe("error handling", () => {
   it("surfaces the detail string from the backend", async () => {
     mockFetch({

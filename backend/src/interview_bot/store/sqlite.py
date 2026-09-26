@@ -3,7 +3,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from interview_bot.domain import Difficulty, Question, Topic
+from interview_bot.domain import Difficulty, Grade, Question, Topic
 from interview_bot.store.base import Session, new_session_id
 
 SCHEMA = """
@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS questions (
 );
 
 CREATE INDEX IF NOT EXISTS questions_by_session ON questions(session_id, seq);
+
+CREATE TABLE IF NOT EXISTS grades (
+    question_id TEXT PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+    session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    payload     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS grades_by_session ON grades(session_id);
 """
 
 
@@ -71,6 +79,13 @@ class SQLiteSessionStore:
             rows = await cursor.fetchall()
 
         session.questions = {row[0]: _to_question(row) for row in rows}
+
+        async with db.execute(
+            "SELECT question_id, payload FROM grades WHERE session_id = ?", (session_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+        session.grades = {row[0]: Grade.model_validate_json(row[1]) for row in rows}
         return session
 
     async def add_question(self, session_id: str, question: Question) -> None:
@@ -85,6 +100,15 @@ class SQLiteSessionStore:
                 question.prompt,
                 json.dumps(question.key_points),
             ),
+        )
+        await self._connection().commit()
+
+    async def record_grade(self, session_id: str, question_id: str, grade: Grade) -> None:
+        # Re-answering a question replaces its grade rather than piling up rows.
+        await self._connection().execute(
+            "INSERT INTO grades (question_id, session_id, payload) VALUES (?, ?, ?)"
+            " ON CONFLICT(question_id) DO UPDATE SET payload = excluded.payload",
+            (question_id, session_id, grade.model_dump_json()),
         )
         await self._connection().commit()
 

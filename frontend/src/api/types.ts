@@ -24,4 +24,12 @@ export type Grade = {
   missed: string[];
 };
 
+export type SessionState = {
+  session_id: string;
+  topic: Topic;
+  difficulty: Difficulty;
+  current_question: Question | null;
+  current_grade: Grade | null;
+};
+
 export const MAX_SCORE = 5;
