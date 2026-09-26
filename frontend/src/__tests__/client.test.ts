@@ -42,6 +42,21 @@ describe("submitAnswer", () => {
   });
 });
 
+describe("explainQuestion", () => {
+  it("posts to the question's explanation endpoint", async () => {
+    const fetchSpy = mockFetch({
+      json: async () => ({ answer: "Because.", points: [], pitfalls: [] }),
+    });
+
+    const explanation = await api.explainQuestion("s1", "q1");
+
+    expect(explanation.answer).toBe("Because.");
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("http://localhost:8000/sessions/s1/questions/q1/explanation");
+    expect(init.method).toBe("POST");
+  });
+});
+
 describe("resumeSession", () => {
   it("bounds the request with a timeout, so a hung backend cannot block the app", async () => {
     const fetchSpy = mockFetch({

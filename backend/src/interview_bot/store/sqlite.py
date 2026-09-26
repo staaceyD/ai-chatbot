@@ -3,7 +3,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from interview_bot.domain import Difficulty, Grade, Question, Topic
+from interview_bot.domain import Difficulty, Explanation, Grade, Question, Topic
 from interview_bot.store.base import Session, new_session_id
 
 SCHEMA = """
@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS grades (
 );
 
 CREATE INDEX IF NOT EXISTS grades_by_session ON grades(session_id);
+
+CREATE TABLE IF NOT EXISTS explanations (
+    question_id TEXT PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+    session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    payload     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS explanations_by_session ON explanations(session_id);
 """
 
 
@@ -86,6 +94,13 @@ class SQLiteSessionStore:
             rows = await cursor.fetchall()
 
         session.grades = {row[0]: Grade.model_validate_json(row[1]) for row in rows}
+
+        async with db.execute(
+            "SELECT question_id, payload FROM explanations WHERE session_id = ?", (session_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+        session.explanations = {row[0]: Explanation.model_validate_json(row[1]) for row in rows}
         return session
 
     async def add_question(self, session_id: str, question: Question) -> None:
@@ -109,6 +124,18 @@ class SQLiteSessionStore:
             "INSERT INTO grades (question_id, session_id, payload) VALUES (?, ?, ?)"
             " ON CONFLICT(question_id) DO UPDATE SET payload = excluded.payload",
             (question_id, session_id, grade.model_dump_json()),
+        )
+        await self._connection().commit()
+
+    async def record_explanation(
+        self, session_id: str, question_id: str, explanation: Explanation
+    ) -> None:
+        # Written once and read back on every "Learn more", so generating it again
+        # never costs the reader another wait on the model.
+        await self._connection().execute(
+            "INSERT INTO explanations (question_id, session_id, payload) VALUES (?, ?, ?)"
+            " ON CONFLICT(question_id) DO UPDATE SET payload = excluded.payload",
+            (question_id, session_id, explanation.model_dump_json()),
         )
         await self._connection().commit()
 

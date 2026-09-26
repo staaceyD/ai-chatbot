@@ -9,7 +9,9 @@ from interview_bot.store import InMemorySessionStore
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(llm_backend="echo")
+    # Off by default so a background write never races a test's queued replies.
+    # test_prefetch.py overrides this fixture to exercise it.
+    return Settings(llm_backend="echo", prefetch_explanations=False)
 
 
 @pytest.fixture

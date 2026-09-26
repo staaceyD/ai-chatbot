@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from interview_bot.domain import Difficulty, Grade, Question, Topic
+from interview_bot.domain import Difficulty, Explanation, Grade, Question, Topic
 from interview_bot.store import InMemorySessionStore, SessionStore, SQLiteSessionStore
 
 
@@ -114,3 +114,28 @@ async def test_an_unanswered_latest_question_has_no_grade(store: SessionStore) -
     await store.add_question(session.id, a_question("second"))
 
     assert (await store.get(session.id)).latest_grade is None
+
+
+async def test_explanation_round_trips_with_its_question(store: SessionStore) -> None:
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    await store.add_question(session.id, a_question("What is the GIL?"))
+    explanation = Explanation(
+        answer="A mutex around the interpreter.",
+        points=[{"point": "a mutex", "detail": "It guards interpreter state."}],
+        pitfalls=["Reaching for threads on CPU-bound work"],
+    )
+
+    await store.record_explanation(session.id, "What is the GIL?", explanation)
+
+    loaded = await store.get(session.id)
+    assert loaded.explanations == {"What is the GIL?": explanation}
+    assert loaded.latest_explanation == explanation
+
+
+async def test_an_unexplained_latest_question_has_no_explanation(store: SessionStore) -> None:
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    await store.add_question(session.id, a_question("first"))
+    await store.record_explanation(session.id, "first", Explanation(answer="Because."))
+    await store.add_question(session.id, a_question("second"))
+
+    assert (await store.get(session.id)).latest_explanation is None
