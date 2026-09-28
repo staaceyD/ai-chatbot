@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { ApiError } from "../api/client";
 import type { Api } from "../api/client";
-import type { Grade, Question, Session, SessionState } from "../api/types";
+import type { Explanation, Grade, Question, Session, SessionState } from "../api/types";
 
 const session: Session = { session_id: "s1", topic: "python", difficulty: "mid" };
 
@@ -24,12 +24,19 @@ const grade: Grade = {
   missed: ["I/O-bound work"],
 };
 
+const explanation: Explanation = {
+  answer: "The GIL is one mutex.\n\nOnly one thread runs bytecode at a time.",
+  points: [{ point: "a mutex", detail: "It guards the interpreter's own state." }],
+  pitfalls: ["Reaching for threads on CPU-bound work"],
+};
+
 const sessionState: SessionState = {
   session_id: "s1",
   topic: "python",
   difficulty: "mid",
   current_question: question,
   current_grade: null,
+  current_explanation: null,
 };
 
 function fakeApi(overrides: Partial<Api> = {}): Api {
@@ -38,6 +45,7 @@ function fakeApi(overrides: Partial<Api> = {}): Api {
     startSession: vi.fn().mockResolvedValue(session),
     nextQuestion: vi.fn().mockResolvedValue(question),
     submitAnswer: vi.fn().mockResolvedValue(grade),
+    explainQuestion: vi.fn().mockResolvedValue(explanation),
     ...overrides,
   };
 }
@@ -49,6 +57,14 @@ async function startInterview(api: Api) {
   render(<App api={api} />);
   await user.click(screen.getByRole("button", { name: /start interview/i }));
   await screen.findByText(question.prompt);
+  return user;
+}
+
+async function answerTheQuestion(api: Api) {
+  const user = await startInterview(api);
+  await user.type(screen.getByLabelText(/your answer/i), "It is a mutex.");
+  await user.click(screen.getByRole("button", { name: /submit answer/i }));
+  await screen.findByTestId("score");
   return user;
 }
 
@@ -306,6 +322,111 @@ describe("resuming", () => {
       await screen.findByRole("button", { name: /start interview/i }),
     ).toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe("learning the answer", () => {
+  it("fetches and renders the worked answer behind Learn more", async () => {
+    const api = fakeApi();
+    const user = await answerTheQuestion(api);
+
+    expect(screen.queryByTestId("explanation")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /learn more/i }));
+
+    expect(await screen.findByTestId("explanation")).toBeInTheDocument();
+    expect(screen.getByText("The GIL is one mutex.")).toBeInTheDocument();
+    expect(screen.getByText("Only one thread runs bytecode at a time.")).toBeInTheDocument();
+    expect(screen.getByText("It guards the interpreter's own state.")).toBeInTheDocument();
+    expect(screen.getByText("Reaching for threads on CPU-bound work")).toBeInTheDocument();
+    expect(api.explainQuestion).toHaveBeenCalledWith("s1", "q1");
+  });
+
+  it("folds the answer away and back without asking the model again", async () => {
+    const api = fakeApi();
+    const user = await answerTheQuestion(api);
+
+    await user.click(screen.getByRole("button", { name: /learn more/i }));
+    await screen.findByTestId("explanation");
+    await user.click(screen.getByRole("button", { name: /hide details/i }));
+
+    expect(screen.queryByTestId("explanation")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /learn more/i }));
+
+    expect(screen.getByTestId("explanation")).toBeInTheDocument();
+    expect(api.explainQuestion).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the grade on screen while the answer is being written", async () => {
+    let release: (explanation: Explanation) => void = () => {};
+    const api = fakeApi({
+      explainQuestion: vi.fn().mockReturnValue(
+        new Promise<Explanation>((resolve) => {
+          release = resolve;
+        }),
+      ),
+    });
+    const user = await answerTheQuestion(api);
+
+    await user.click(screen.getByRole("button", { name: /learn more/i }));
+
+    expect(screen.getByTestId("score")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /next question/i })).toBeDisabled();
+
+    release(explanation);
+    expect(await screen.findByTestId("explanation")).toBeInTheDocument();
+  });
+
+  it("reports a failure without losing the grade", async () => {
+    const api = fakeApi({
+      explainQuestion: vi.fn().mockRejectedValue(new ApiError("The model is unavailable: boom")),
+    });
+    const user = await answerTheQuestion(api);
+
+    await user.click(screen.getByRole("button", { name: /learn more/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The model is unavailable: boom");
+    expect(screen.getByTestId("score")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /learn more/i })).toBeInTheDocument();
+  });
+
+  it("starts the next question with the details folded away", async () => {
+    const second = { ...question, question_id: "q2", prompt: "What is a decorator?" };
+    const api = fakeApi({
+      nextQuestion: vi.fn().mockResolvedValueOnce(question).mockResolvedValueOnce(second),
+    });
+    const user = await answerTheQuestion(api);
+    await user.click(screen.getByRole("button", { name: /learn more/i }));
+    await screen.findByTestId("explanation");
+
+    await user.click(screen.getByRole("button", { name: /next question/i }));
+    await screen.findByText(second.prompt);
+    await user.type(screen.getByLabelText(/your answer/i), "A wrapper.");
+    await user.click(screen.getByRole("button", { name: /submit answer/i }));
+    await screen.findByTestId("score");
+
+    expect(screen.queryByTestId("explanation")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /learn more/i })).toBeInTheDocument();
+  });
+
+  it("restores an answer already read after a refresh", async () => {
+    localStorage.setItem(STORAGE_KEY, "s1");
+    const api = fakeApi({
+      resumeSession: vi.fn().mockResolvedValue({
+        ...sessionState,
+        current_grade: grade,
+        current_explanation: explanation,
+      }),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await screen.findByTestId("score");
+
+    await user.click(screen.getByRole("button", { name: /learn more/i }));
+
+    expect(screen.getByTestId("explanation")).toBeInTheDocument();
+    expect(api.explainQuestion).not.toHaveBeenCalled();
   });
 });
 

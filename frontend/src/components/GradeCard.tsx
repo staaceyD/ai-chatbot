@@ -1,13 +1,31 @@
+import { useState } from "react";
+
 import { MAX_SCORE } from "../api/types";
-import type { Grade } from "../api/types";
+import type { Explanation, Grade } from "../api/types";
+import { ExplanationPanel } from "./ExplanationPanel";
 
 type Props = {
   grade: Grade;
+  explanation: Explanation | null;
   disabled: boolean;
+  onLearnMore: () => void;
   onNext: () => void;
 };
 
-export function GradeCard({ grade, disabled, onNext }: Props) {
+export function GradeCard({ grade, explanation, disabled, onLearnMore, onNext }: Props) {
+  const [shown, setShown] = useState(false);
+
+  // The first click has to fetch the worked answer; once it is in hand the
+  // button only folds it away and back, without asking the model again.
+  function toggle() {
+    if (explanation === null) {
+      setShown(true);
+      onLearnMore();
+      return;
+    }
+    setShown((was) => !was);
+  }
+
   return (
     <section className="card">
       <p className="score" data-testid="score">
@@ -18,9 +36,16 @@ export function GradeCard({ grade, disabled, onNext }: Props) {
       <PointList title="Covered" points={grade.covered} className="covered" />
       <PointList title="Missed" points={grade.missed} className="missed" />
 
-      <button type="button" onClick={onNext} disabled={disabled}>
-        Next question
-      </button>
+      {shown && explanation !== null && <ExplanationPanel explanation={explanation} />}
+
+      <div className="actions">
+        <button type="button" className="secondary" onClick={toggle} disabled={disabled}>
+          {shown && explanation !== null ? "Hide details" : "Learn more"}
+        </button>
+        <button type="button" onClick={onNext} disabled={disabled}>
+          Next question
+        </button>
+      </div>
     </section>
   );
 }

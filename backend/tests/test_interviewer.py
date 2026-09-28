@@ -123,3 +123,40 @@ async def test_backend_failure_propagates() -> None:
         await Interviewer(FailingClient()).generate_question(
             topic=Topic.PYTHON, difficulty=Difficulty.MID
         )
+
+
+async def test_explains_the_answer_from_the_key_points() -> None:
+    llm = EchoClient()
+    llm.queue(
+        json.dumps(
+            {
+                "answer": "It is a mutex around the interpreter.",
+                "points": [{"point": "a mutex", "detail": "It guards interpreter state."}],
+                "pitfalls": ["Reaching for threads on CPU-bound work"],
+            }
+        )
+    )
+
+    explanation = await Interviewer(llm).explain(question=QUESTION)
+
+    assert explanation.answer == "It is a mutex around the interpreter."
+    assert explanation.points[0].point == "a mutex"
+    assert explanation.pitfalls == ["Reaching for threads on CPU-bound work"]
+    assert "a mutex" in llm.calls[0]["prompt"]
+    assert "What is the GIL?" in llm.calls[0]["prompt"]
+    assert llm.calls[0]["json_mode"] is True
+
+
+async def test_explanation_survives_a_model_that_skips_the_optional_parts() -> None:
+    explanation = await interviewer_replying('{"answer": "Just the prose."}').explain(
+        question=QUESTION
+    )
+
+    assert explanation.answer == "Just the prose."
+    assert explanation.points == []
+    assert explanation.pitfalls == []
+
+
+async def test_explanation_without_an_answer_becomes_llm_error() -> None:
+    with pytest.raises(LLMError, match="unusable Explanation"):
+        await interviewer_replying('{"points": []}').explain(question=QUESTION)

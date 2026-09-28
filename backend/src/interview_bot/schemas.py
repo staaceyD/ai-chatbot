@@ -2,7 +2,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, Field
 
-from interview_bot.domain import Difficulty, Grade, Topic
+from interview_bot.domain import Difficulty, Explanation, Grade, Topic
 
 
 def _non_blank(value: str) -> str:
@@ -43,6 +43,9 @@ class SessionStateResponse(BaseModel):
     # Set when the current question was already answered, so a resume shows the
     # grade the candidate has already seen instead of asking again.
     current_grade: Grade | None
+    # Set once the worked answer has been read, so a refresh does not spend
+    # another wait on the model to show it again.
+    current_explanation: Explanation | None
 
 
 class AnswerRequest(BaseModel):

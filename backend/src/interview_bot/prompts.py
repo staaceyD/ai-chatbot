@@ -22,6 +22,12 @@ GRADE_SYSTEM = (
     "You reply with JSON only, never with prose or markdown fences."
 )
 
+EXPLAIN_SYSTEM = (
+    "You are a patient senior engineer teaching the answer to an interview question, "
+    "so the reader does not have to look anything up. "
+    "You reply with JSON only, never with prose or markdown fences."
+)
+
 
 def generate_prompt(*, topic: Topic, difficulty: Difficulty, avoid: list[str]) -> str:
     avoid_block = ""
@@ -62,4 +68,20 @@ def grade_prompt(*, question: Question, answer: str) -> str:
         "List the key points they covered and the ones they missed."
         "\n\nRespond with JSON shaped exactly like: "
         '{"score": 3, "verdict": "...", "covered": ["..."], "missed": ["..."]}'
+    )
+
+
+def explain_prompt(*, question: Question) -> str:
+    key_points = "\n".join(f"- {point}" for point in question.key_points)
+    return (
+        f"Question asked:\n{question.prompt}"
+        f"\n\nKey points a complete answer covers:\n{key_points}"
+        f"\n\nTeach the answer to {DIFFICULTY_LABELS[question.difficulty]}."
+        "\n\nWrite the answer out in full, as a good textbook would: three or four short "
+        "paragraphs separated by blank lines. Say why each key point matters rather than only "
+        f"that it does, and ground it in a concrete {TOPIC_LABELS[question.topic]} example."
+        "\n\nThen expand every key point into one or two sentences of its own, and list the "
+        "mistakes engineers commonly make about this topic."
+        "\n\nRespond with JSON shaped exactly like: "
+        '{"answer": "...", "points": [{"point": "...", "detail": "..."}], "pitfalls": ["..."]}'
     )

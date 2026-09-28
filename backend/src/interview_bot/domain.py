@@ -30,3 +30,16 @@ class Grade(BaseModel):
     verdict: str
     covered: list[str] = []
     missed: list[str] = []
+
+
+class ExplanationPoint(BaseModel):
+    point: str
+    detail: str
+
+
+class Explanation(BaseModel):
+    """The worked answer, shown only once a question has been graded."""
+
+    answer: str = Field(min_length=1)
+    points: list[ExplanationPoint] = []
+    pitfalls: list[str] = []

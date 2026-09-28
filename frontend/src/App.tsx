@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { api as defaultApi, ApiError } from "./api/client";
 import type { Api } from "./api/client";
-import type { Difficulty, Grade, Question, Topic } from "./api/types";
+import type { Difficulty, Explanation, Grade, Question, Topic } from "./api/types";
 import { GradeCard } from "./components/GradeCard";
 import { QuestionCard } from "./components/QuestionCard";
 import { TopicPicker } from "./components/TopicPicker";
@@ -14,6 +14,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
   const [grade, setGrade] = useState<Grade | null>(null);
+  const [explanation, setExplanation] = useState<Explanation | null>(null);
   const [busy, setBusy] = useState(false);
   // Read storage during the first render, so a visitor with nothing stored
   // never sees a flash of the restoring splash.
@@ -47,6 +48,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         // Restored alongside the question, so answering it again is never the
         // only way forward after a refresh.
         setGrade(state.current_grade);
+        setExplanation(state.current_explanation);
       } catch (caught) {
         // Only a 404 proves the session is gone. Forgetting the id on a passing
         // failure would strand an interview the backend still has.
@@ -83,6 +85,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setSessionId(session.session_id);
       setQuestion(first);
       setGrade(null);
+      setExplanation(null);
     });
 
   const next = () =>
@@ -91,6 +94,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       const following = await api.nextQuestion(sessionId);
       setQuestion(following);
       setGrade(null);
+      setExplanation(null);
     });
 
   const answer = (text: string) =>
@@ -99,11 +103,18 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setGrade(await api.submitAnswer(sessionId, question.question_id, text));
     });
 
+  const learnMore = () =>
+    run(async () => {
+      if (!sessionId || !question) return;
+      setExplanation(await api.explainQuestion(sessionId, question.question_id));
+    });
+
   function startOver() {
     forgetSession();
     setSessionId(null);
     setQuestion(null);
     setGrade(null);
+    setExplanation(null);
     setError(null);
   }
 
@@ -140,7 +151,17 @@ export function App({ api = defaultApi }: { api?: Api }) {
               onSubmit={answer}
             />
           )}
-          {grade && <GradeCard grade={grade} disabled={busy} onNext={next} />}
+          {grade && question && (
+            <GradeCard
+              // Remount on a new question so the details start folded away.
+              key={question.question_id}
+              grade={grade}
+              explanation={explanation}
+              disabled={busy}
+              onLearnMore={learnMore}
+              onNext={next}
+            />
+          )}
 
           <button type="button" className="secondary" onClick={startOver} disabled={busy}>
             Start over

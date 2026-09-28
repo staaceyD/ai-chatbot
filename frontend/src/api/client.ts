@@ -1,4 +1,12 @@
-import type { Difficulty, Grade, Question, Session, SessionState, Topic } from "./types";
+import type {
+  Difficulty,
+  Explanation,
+  Grade,
+  Question,
+  Session,
+  SessionState,
+  Topic,
+} from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -64,6 +72,9 @@ export const api = {
       question_id: questionId,
       answer,
     }),
+
+  explainQuestion: (sessionId: string, questionId: string) =>
+    post<Explanation>(`/sessions/${sessionId}/questions/${questionId}/explanation`),
 };
 
 export type Api = typeof api;

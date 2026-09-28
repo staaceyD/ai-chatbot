@@ -5,11 +5,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError
 
-from interview_bot.domain import Difficulty, Grade, Question, Topic
+from interview_bot.domain import Difficulty, Explanation, Grade, Question, Topic
 from interview_bot.llm import LLMClient, LLMError
 from interview_bot.prompts import (
+    EXPLAIN_SYSTEM,
     GENERATE_SYSTEM,
     GRADE_SYSTEM,
+    explain_prompt,
     generate_prompt,
     grade_prompt,
 )
@@ -55,6 +57,14 @@ class Interviewer:
             json_mode=True,
         )
         return _parse(reply, Grade)
+
+    async def explain(self, *, question: Question) -> Explanation:
+        reply = await self._llm.complete(
+            system=EXPLAIN_SYSTEM,
+            prompt=explain_prompt(question=question),
+            json_mode=True,
+        )
+        return _parse(reply, Explanation)
 
 
 def _parse[T: BaseModel](reply: str, model: type[T]) -> T:
