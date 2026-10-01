@@ -10,8 +10,8 @@ export function ExplanationPanel({ explanation }: { explanation: Explanation }) 
         <>
           <h3>Point by point</h3>
           <dl>
-            {explanation.points.map(({ point, detail }) => (
-              <div key={point}>
+            {explanation.points.map(({ point, detail }, index) => (
+              <div key={index}>
                 <dt>
                   <Inline text={point} />
                 </dt>
@@ -28,8 +28,8 @@ export function ExplanationPanel({ explanation }: { explanation: Explanation }) 
         <>
           <h3>Common pitfalls</h3>
           <ul>
-            {explanation.pitfalls.map((pitfall) => (
-              <li key={pitfall}>
+            {explanation.pitfalls.map((pitfall, index) => (
+              <li key={index}>
                 <Inline text={pitfall} />
               </li>
             ))}
@@ -74,7 +74,10 @@ function Inline({ text }: { text: string }) {
 
 type Block = { code: boolean; text: string };
 
-const FENCED = /```[\w]*\r?\n?([\s\S]*?)```/g;
+// The newline is required: without it, `\`\`\`def f():` would read `def` as a
+// language tag and drop it from the code. A fence the model wrote without one
+// then renders as prose, which is untidy rather than wrong.
+const FENCED = /```[\w+#.-]*[ \t]*\r?\n([\s\S]*?)```/g;
 
 function blocks(text: string): Block[] {
   const found: Block[] = [];

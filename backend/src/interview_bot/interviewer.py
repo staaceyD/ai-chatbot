@@ -26,8 +26,9 @@ class GeneratedQuestion(BaseModel):
 
 
 class Interviewer:
-    def __init__(self, llm: LLMClient) -> None:
+    def __init__(self, llm: LLMClient, *, explain_timeout_seconds: float | None = None) -> None:
         self._llm = llm
+        self._explain_timeout_seconds = explain_timeout_seconds
 
     async def generate_question(
         self,
@@ -63,6 +64,7 @@ class Interviewer:
             system=EXPLAIN_SYSTEM,
             prompt=explain_prompt(question=question),
             json_mode=True,
+            timeout_seconds=self._explain_timeout_seconds,
         )
         return _parse(reply, Explanation)
 

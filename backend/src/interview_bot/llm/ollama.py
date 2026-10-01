@@ -23,7 +23,14 @@ class OllamaClient:
             transport=transport,
         )
 
-    async def complete(self, *, system: str, prompt: str, json_mode: bool = False) -> str:
+    async def complete(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        json_mode: bool = False,
+        timeout_seconds: float | None = None,
+    ) -> str:
         payload: dict[str, object] = {
             "model": self.model,
             "system": system,
@@ -34,7 +41,13 @@ class OllamaClient:
             payload["format"] = "json"
 
         try:
-            response = await self._http.post("/api/generate", json=payload)
+            response = await self._http.post(
+                "/api/generate",
+                json=payload,
+                timeout=(
+                    timeout_seconds if timeout_seconds is not None else httpx.USE_CLIENT_DEFAULT
+                ),
+            )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise LLMError(f"Ollama returned {exc.response.status_code}") from exc

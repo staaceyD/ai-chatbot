@@ -31,9 +31,16 @@ class Session:
 
     @property
     def latest_explanation(self) -> Explanation | None:
-        """The worked answer already read, so a resume does not regenerate it."""
+        """The worked answer for `latest_question`, so a resume does not regenerate it.
+
+        Withheld until the question is graded. A worked answer written ahead is
+        in the store before the candidate has attempted anything, and handing
+        that back would turn a refresh into a way to read the answer instead.
+        """
         current = self.latest_question
-        return self.explanations.get(current.id) if current else None
+        if current is None or current.id not in self.grades:
+            return None
+        return self.explanations.get(current.id)
 
 
 def new_session_id() -> str:

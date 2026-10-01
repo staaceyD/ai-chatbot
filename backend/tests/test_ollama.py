@@ -54,6 +54,22 @@ async def test_json_mode_asks_ollama_for_json() -> None:
     await client.aclose()
 
 
+async def test_a_per_call_timeout_overrides_the_client_default() -> None:
+    seen: list[float | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions["timeout"]["read"])
+        return httpx.Response(200, json={"response": "{}"})
+
+    client = client_with(handler)
+
+    await client.complete(system="s", prompt="p")
+    await client.complete(system="s", prompt="p", timeout_seconds=90.0)
+
+    assert seen == [5.0, 90.0]
+    await client.aclose()
+
+
 async def test_http_error_becomes_llm_error() -> None:
     client = client_with(lambda request: httpx.Response(500, text="boom"))
 

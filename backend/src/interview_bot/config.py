@@ -12,9 +12,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="INTERVIEW_BOT_", env_file=".env")
 
     llm_backend: LLMBackend = "ollama"
-    # A worked answer is several times longer than a grade, and on a slow
-    # machine it is the one call that would otherwise run out of time.
-    llm_timeout_seconds: float = 300.0
+    llm_timeout_seconds: float = 120.0
+    # A worked answer is several times longer than a question or a grade, so it
+    # gets its own budget rather than making a hung model take five minutes to
+    # fail on every call.
+    llm_explain_timeout_seconds: float = 300.0
     prefetch_explanations: bool = True
 
     ollama_base_url: str = "http://localhost:11434"

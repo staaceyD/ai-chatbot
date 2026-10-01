@@ -17,8 +17,22 @@ class EchoClient:
         """Set the replies the next completions return, in order."""
         self._replies = list(replies)
 
-    async def complete(self, *, system: str, prompt: str, json_mode: bool = False) -> str:
-        self.calls.append({"system": system, "prompt": prompt, "json_mode": json_mode})
+    async def complete(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        json_mode: bool = False,
+        timeout_seconds: float | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "system": system,
+                "prompt": prompt,
+                "json_mode": json_mode,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
         if self._replies:
             return self._replies.pop(0)
         if json_mode:
@@ -38,7 +52,14 @@ class FailingClient:
         self.model = model
         self._message = message
 
-    async def complete(self, *, system: str, prompt: str, json_mode: bool = False) -> str:
+    async def complete(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        json_mode: bool = False,
+        timeout_seconds: float | None = None,
+    ) -> str:
         raise LLMError(self._message)
 
     async def aclose(self) -> None:

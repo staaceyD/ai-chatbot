@@ -126,10 +126,22 @@ async def test_explanation_round_trips_with_its_question(store: SessionStore) ->
     )
 
     await store.record_explanation(session.id, "What is the GIL?", explanation)
+    await store.record_grade(session.id, "What is the GIL?", Grade(score=3, verdict="Fine."))
 
     loaded = await store.get(session.id)
     assert loaded.explanations == {"What is the GIL?": explanation}
     assert loaded.latest_explanation == explanation
+
+
+async def test_an_ungraded_question_keeps_its_explanation_back(store: SessionStore) -> None:
+    """An answer written ahead is in the store before the candidate attempts anything."""
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    await store.add_question(session.id, a_question("What is the GIL?"))
+    await store.record_explanation(session.id, "What is the GIL?", Explanation(answer="A mutex."))
+
+    loaded = await store.get(session.id)
+    assert loaded.explanations["What is the GIL?"].answer == "A mutex."
+    assert loaded.latest_explanation is None
 
 
 async def test_an_unexplained_latest_question_has_no_explanation(store: SessionStore) -> None:
