@@ -84,6 +84,40 @@ async def test_an_answer_written_ahead_is_still_kept_back_until_the_question_is_
     assert "Written ahead." not in response.text
 
 
+async def test_resume_does_not_hand_back_the_answer_written_ahead(
+    api: AsyncClient, llm: EchoClient, store: InMemorySessionStore
+) -> None:
+    """A refresh must not become the way to read the answer instead of attempting it."""
+    llm.queue(question_reply(), explanation_reply("Written ahead."))
+    session_id = await start_session(api)
+    await api.post(f"/sessions/{session_id}/questions")
+    assert await eventually(written(store, session_id))
+
+    response = await api.get(f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert response.json()["current_grade"] is None
+    assert response.json()["current_explanation"] is None
+    assert "Written ahead." not in response.text
+
+
+async def test_resume_hands_back_the_answer_once_the_question_is_graded(
+    api: AsyncClient, llm: EchoClient, store: InMemorySessionStore
+) -> None:
+    llm.queue(question_reply(), explanation_reply("Written ahead."), grade_reply())
+    session_id = await start_session(api)
+    question_id = (await api.post(f"/sessions/{session_id}/questions")).json()["question_id"]
+    assert await eventually(written(store, session_id))
+    await api.post(
+        f"/sessions/{session_id}/answers",
+        json={"question_id": question_id, "answer": "It is a mutex."},
+    )
+
+    resumed = (await api.get(f"/sessions/{session_id}")).json()
+
+    assert resumed["current_explanation"]["answer"] == "Written ahead."
+
+
 async def test_the_next_question_is_written_ahead_too(
     api: AsyncClient, llm: EchoClient, store: InMemorySessionStore
 ) -> None:

@@ -41,7 +41,14 @@ class GatedClient:
         self.cancelled = 0
         self._fails = fails
 
-    async def complete(self, *, system: str, prompt: str, json_mode: bool = False) -> str:
+    async def complete(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        json_mode: bool = False,
+        timeout_seconds: float | None = None,
+    ) -> str:
         self.calls += 1
         self.started.set()
         try:
@@ -217,6 +224,87 @@ async def test_with_prefetching_off_the_answer_is_written_on_request(
     assert (await explainer.explain(session_id, QUESTION)).answer == "It is a mutex."
 
 
+async def test_a_new_prefetch_leaves_a_waited_on_write_alone(
+    llm: GatedClient, store: InMemorySessionStore
+) -> None:
+    """Two tabs on one session: the second must not cancel the first one's request."""
+    explainer = build(llm, store)
+    session_id = await a_session(store)
+    await store.add_question(session_id, ANOTHER)
+
+    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    await llm.started.wait()
+    explainer.prefetch(session_id, ANOTHER)
+    llm.finish()
+
+    assert (await asked).answer == "It is a mutex."
+    assert llm.cancelled == 0
+
+
+async def test_a_waiter_giving_up_leaves_the_write_running(
+    llm: GatedClient, store: InMemorySessionStore
+) -> None:
+    """A closed tab must not throw away minutes of the model's work."""
+    explainer = build(llm, store)
+    session_id = await a_session(store)
+
+    gave_up = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    await llm.started.wait()
+    gave_up.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await gave_up
+    llm.finish()
+
+    assert (await explainer.explain(session_id, QUESTION)).answer == "It is a mutex."
+    assert llm.calls == 1
+    assert llm.cancelled == 0
+
+
+async def test_an_explanation_being_waited_on_holds_the_model(
+    llm: GatedClient, store: InMemorySessionStore
+) -> None:
+    """The longest of the three calls is protected like the other two."""
+    explainer = build(llm, store)
+    session_id = await a_session(store)
+    await store.add_question(session_id, ANOTHER)
+
+    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    await llm.started.wait()
+    explainer.prefetch(session_id, ANOTHER)
+    llm.finish()
+    await asked
+
+    # The prefetch never got the model, so it never reached the client.
+    assert llm.calls == 1
+
+
+async def test_a_finished_write_is_not_kept_in_memory(
+    llm: GatedClient, store: InMemorySessionStore
+) -> None:
+    explainer = build(llm, store)
+    session_id = await a_session(store)
+
+    llm.finish()
+    await explainer.explain(session_id, QUESTION)
+
+    assert explainer._writing == {}
+
+
+async def test_the_stored_answer_is_reused_instead_of_written_again(
+    llm: GatedClient, store: InMemorySessionStore
+) -> None:
+    explainer = build(llm, store)
+    session_id = await a_session(store)
+
+    llm.finish()
+    await explainer.explain(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION)
+    explanation = await explainer.explain(session_id, QUESTION)
+
+    assert explanation.answer == "It is a mutex."
+    assert llm.calls == 1
+
+
 async def test_closing_lets_go_of_work_in_flight(
     llm: GatedClient, store: InMemorySessionStore
 ) -> None:
@@ -228,3 +316,19 @@ async def test_closing_lets_go_of_work_in_flight(
     await explainer.aclose()
 
     assert llm.cancelled == 1
+
+
+async def test_closing_lets_go_of_a_write_somebody_is_waiting_on_too(
+    llm: GatedClient, store: InMemorySessionStore
+) -> None:
+    """Nothing may still be inside the store or the LLM client when they close."""
+    explainer = build(llm, store)
+    session_id = await a_session(store)
+
+    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    await llm.started.wait()
+    await explainer.aclose()
+
+    assert llm.cancelled == 1
+    with pytest.raises(asyncio.CancelledError):
+        await asked

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -27,7 +27,9 @@ class Explainer:
 
     A local model serves one request at a time, though, so writing ahead is only
     free while nobody is waiting. Every prefetch is therefore cancelled the
-    moment a question or a grade needs the model, and started again afterwards.
+    moment a question, a grade, or an answer somebody clicked through to needs
+    the model, and started again afterwards. Writing that somebody is waiting
+    on is never cancelled in turn: it is their request.
     """
 
     def __init__(
@@ -55,11 +57,17 @@ class Explainer:
         writing = self._writing.get(session_id)
         if writing is None or writing.question_id != question.id:
             writing = self._start(session_id, question, prefetch=False)
+        # Marked before the model is held, so `foreground` leaves alone the very
+        # write that is being waited on.
         writing.prefetch = False
-        return await writing.task
+        async with self.foreground():
+            # Shielded because the task is shared: a client that gives up
+            # halfway must not cancel work the store and other waiters are
+            # counting on, only stop waiting for it.
+            return await asyncio.shield(writing.task)
 
     @asynccontextmanager
-    async def foreground(self) -> AsyncIterator[None]:
+    async def foreground(self) -> AsyncGenerator[None]:
         """Hold the model for work someone is waiting on, dropping any prefetch."""
         self._waiting_on_the_model += 1
         try:
@@ -69,7 +77,14 @@ class Explainer:
             self._waiting_on_the_model -= 1
 
     async def aclose(self) -> None:
-        await self._drop_prefetches()
+        """Let go of the model and the store before the app closes them.
+
+        Shutdown cancels even a write somebody is waiting on: their request is
+        going away with the server either way, and a task still inside
+        `explain` when the LLM client and the store close fails silently
+        instead of persisting anything.
+        """
+        await self._settle(self._writing.values())
 
     def _start(self, session_id: str, question: Question, *, prefetch: bool) -> _Writing:
         writing = self._writing.get(session_id)
@@ -91,25 +106,38 @@ class Explainer:
 
     async def _write(self, session_id: str, question: Question) -> Explanation:
         try:
-            explanation = await self._interviewer.explain(question=question)
-            await self._store.record_explanation(session_id, question.id, explanation)
-        except BaseException:
-            # A write that failed or was cancelled is not this question's answer,
-            # so forget it and let the next request start over.
+            # A finished write is not kept in `_writing`, so the store is what
+            # says whether this question has been written out already.
+            explanation = await self._written(session_id, question.id)
+            if explanation is None:
+                explanation = await self._interviewer.explain(question=question)
+                await self._store.record_explanation(session_id, question.id, explanation)
+        finally:
+            # Nothing is tracked once it is over: on success the store holds the
+            # lasting copy, and a write that failed or was cancelled is not this
+            # question's answer, so the next request starts it over.
             self._forget(session_id, question.id)
-            raise
         return explanation
 
+    async def _written(self, session_id: str, question_id: str) -> Explanation | None:
+        session = await self._store.get(session_id)
+        return session.explanations.get(question_id) if session else None
+
     async def _drop_prefetches(self) -> None:
-        dropped = [writing for writing in self._writing.values() if writing.prefetch]
-        for writing in dropped:
-            self._cancel(writing)
-        if dropped:
-            # Wait for the model to actually let go before taking it over.
-            await asyncio.gather(*(writing.task for writing in dropped), return_exceptions=True)
+        await self._settle([writing for writing in self._writing.values() if writing.prefetch])
+
+    async def _settle(self, writings: Iterable[_Writing]) -> None:
+        """Cancel writes and wait for the model to actually let go of them."""
+        tasks = [writing.task for writing in writings if not writing.task.done()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def _cancel(self, writing: _Writing | None) -> None:
-        if writing is not None and not writing.task.done():
+        # Work somebody is waiting on is left to finish, and simply stops being
+        # tracked; cancelling it here would fail their request instead.
+        if writing is not None and writing.prefetch and not writing.task.done():
             writing.task.cancel()
 
     def _forget(self, session_id: str, question_id: str) -> None:

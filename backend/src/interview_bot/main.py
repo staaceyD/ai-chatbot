@@ -26,7 +26,10 @@ def create_app(
         app.state.session_store = session_store or build_session_store(settings)
         await app.state.session_store.initialize()
         app.state.explainer = Explainer(
-            Interviewer(app.state.llm_client),
+            Interviewer(
+                app.state.llm_client,
+                explain_timeout_seconds=settings.llm_explain_timeout_seconds,
+            ),
             app.state.session_store,
             prefetch=settings.prefetch_explanations,
         )

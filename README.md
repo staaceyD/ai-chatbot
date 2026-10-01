@@ -115,7 +115,9 @@ question you have finished or regenerating an explanation you have seen.
 An explanation is written once and then stored with its question, so asking
 again is free. It is refused with a `409` until the question has been answered,
 which keeps the endpoint from becoming a way to read the answer instead of
-attempting it — including when it was already written ahead.
+attempting it — including when it was already written ahead. A resume is held
+to the same rule: an ungraded question comes back without its worked answer,
+even when one is already sitting in the store.
 
 ### Writing answers ahead
 
@@ -141,7 +143,8 @@ have defaults, so you only need to set what you want to change.
 | `INTERVIEW_BOT_LLM_BACKEND` | `ollama` | Model provider: `ollama`, or `echo` for canned replies |
 | `INTERVIEW_BOT_OLLAMA_MODEL` | `qwen3:4b-instruct` | Which Ollama model to use |
 | `INTERVIEW_BOT_OLLAMA_BASE_URL` | `http://localhost:11434` | Where Ollama is listening |
-| `INTERVIEW_BOT_LLM_TIMEOUT_SECONDS` | `300` | Give up on a slow model after this long |
+| `INTERVIEW_BOT_LLM_TIMEOUT_SECONDS` | `120` | Give up on a slow model after this long |
+| `INTERVIEW_BOT_LLM_EXPLAIN_TIMEOUT_SECONDS` | `300` | The same, for a worked answer, which is several times longer |
 | `INTERVIEW_BOT_PREFETCH_EXPLANATIONS` | `true` | Write worked answers ahead, during the idle time while you answer |
 | `INTERVIEW_BOT_STORE_BACKEND` | `sqlite` | Where sessions live: `sqlite`, or `memory` to drop them on exit |
 | `INTERVIEW_BOT_SQLITE_PATH` | `interview_bot.db` | SQLite file, relative to where the backend runs |
