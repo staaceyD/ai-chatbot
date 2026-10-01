@@ -1,4 +1,4 @@
-import { DIFFICULTIES, TOPICS } from "../api/types";
+import { DIFFICULTIES, TOPIC_GROUPS } from "../api/types";
 import type { Difficulty, Topic } from "../api/types";
 
 type Props = {
@@ -29,10 +29,14 @@ export function TopicPicker({
         disabled={disabled}
         onChange={(event) => onTopicChange(event.target.value as Topic)}
       >
-        {TOPICS.map((value) => (
-          <option key={value} value={value}>
-            {value}
-          </option>
+        {TOPIC_GROUPS.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.topics.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
 

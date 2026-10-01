@@ -1,7 +1,41 @@
-export const TOPICS = ["python", "react", "javascript"] as const;
+// Grouped so the picker can show headings, and labelled so neither the picker
+// nor a question tag has to render a raw value like "data_structures".
+export const TOPIC_GROUPS = [
+  {
+    label: "Languages and frameworks",
+    topics: [
+      { value: "python", label: "Python" },
+      { value: "javascript", label: "JavaScript" },
+      { value: "typescript", label: "TypeScript" },
+      { value: "react", label: "React" },
+    ],
+  },
+  {
+    label: "Engineering fundamentals",
+    topics: [
+      { value: "system_design", label: "System design" },
+      { value: "databases", label: "Databases and SQL" },
+      { value: "algorithms", label: "Algorithms" },
+      { value: "data_structures", label: "Data structures" },
+      { value: "concurrency", label: "Concurrency" },
+      { value: "networking", label: "Networking and HTTP" },
+      { value: "api_design", label: "API design" },
+      { value: "security", label: "Security" },
+      { value: "testing", label: "Testing" },
+      { value: "operating_systems", label: "Operating systems" },
+      { value: "devops", label: "DevOps and deployment" },
+    ],
+  },
+] as const;
+
+export type Topic = (typeof TOPIC_GROUPS)[number]["topics"][number]["value"];
+
+export const TOPIC_LABELS: Record<Topic, string> = Object.fromEntries(
+  TOPIC_GROUPS.flatMap((group) => group.topics.map((topic) => [topic.value, topic.label])),
+) as Record<Topic, string>;
+
 export const DIFFICULTIES = ["junior", "mid", "senior"] as const;
 
-export type Topic = (typeof TOPICS)[number];
 export type Difficulty = (typeof DIFFICULTIES)[number];
 
 export type Session = {

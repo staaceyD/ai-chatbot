@@ -1,6 +1,7 @@
 import pytest
 from httpx import AsyncClient
 
+from interview_bot.domain import Topic
 from interview_bot.llm.echo import EchoClient
 from replies import explanation_reply, grade_reply, question_reply
 
@@ -167,7 +168,7 @@ async def test_session_defaults_to_mid_difficulty(api: AsyncClient) -> None:
     assert response.json()["difficulty"] == "mid"
 
 
-@pytest.mark.parametrize("topic", ["python", "react", "javascript"])
+@pytest.mark.parametrize("topic", [topic.value for topic in Topic])
 async def test_supported_topics(api: AsyncClient, topic: str) -> None:
     response = await api.post("/sessions", json={"topic": topic})
 
