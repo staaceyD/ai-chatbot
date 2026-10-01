@@ -4,9 +4,23 @@ from pydantic import BaseModel, Field
 
 
 class Topic(StrEnum):
+    # Languages and frameworks
     PYTHON = "python"
-    REACT = "react"
     JAVASCRIPT = "javascript"
+    TYPESCRIPT = "typescript"
+    REACT = "react"
+    # Engineering fundamentals
+    SYSTEM_DESIGN = "system_design"
+    DATABASES = "databases"
+    ALGORITHMS = "algorithms"
+    DATA_STRUCTURES = "data_structures"
+    CONCURRENCY = "concurrency"
+    NETWORKING = "networking"
+    API_DESIGN = "api_design"
+    SECURITY = "security"
+    TESTING = "testing"
+    OPERATING_SYSTEMS = "operating_systems"
+    DEVOPS = "devops"
 
 
 class Difficulty(StrEnum):

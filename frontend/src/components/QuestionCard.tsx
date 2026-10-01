@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { TOPIC_LABELS } from "../api/types";
 import type { Question } from "../api/types";
 
 type Props = {
@@ -14,7 +15,7 @@ export function QuestionCard({ question, disabled, onSubmit }: Props) {
   return (
     <section className="card">
       <p className="tag">
-        {question.topic} · {question.difficulty}
+        {TOPIC_LABELS[question.topic]} · {question.difficulty}
       </p>
       <h2>{question.prompt}</h2>
 
@@ -24,7 +25,7 @@ export function QuestionCard({ question, disabled, onSubmit }: Props) {
         rows={8}
         value={answer}
         disabled={disabled}
-        placeholder="Answer in a few sentences, as you would out loud."
+        placeholder="Answer in a few sentences, as you would out loud. One line of code is fine."
         onChange={(event) => setAnswer(event.target.value)}
       />
 

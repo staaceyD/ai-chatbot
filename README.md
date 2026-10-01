@@ -1,8 +1,9 @@
 # ai-chatbot
 
-A local chatbot for practising software engineering interview questions
-(Python, React, JavaScript). Answers are graded by a model running on your
-own machine.
+A local chatbot for practising software engineering interview questions —
+languages and frameworks as well as engineering fundamentals such as system
+design, databases, algorithms and data structures. Answers are graded by a
+model running on your own machine.
 
 ## Requirements
 
@@ -100,8 +101,20 @@ curl -s -X POST \
   http://localhost:8000/sessions/$SESSION/questions/<question id>/explanation | jq
 ```
 
-Topics are `python`, `react` and `javascript`; difficulties are `junior`,
-`mid` and `senior`.
+Difficulties are `junior`, `mid` and `senior`. Topics are:
+
+| Languages and frameworks | Engineering fundamentals |
+| --- | --- |
+| `python` | `system_design`, `databases`, `algorithms` |
+| `javascript` | `data_structures`, `concurrency`, `networking` |
+| `typescript` | `api_design`, `security`, `testing` |
+| `react` | `operating_systems`, `devops` |
+
+Each topic carries its own scope in `backend/src/interview_bot/prompts.py`
+(`TOPIC_SCOPES`), which is what keeps a question about, say, `databases` on
+indexes and isolation levels rather than drifting into generic advice. Adding a
+topic means adding it to `Topic`, to `TOPIC_LABELS` and `TOPIC_SCOPES`, and to
+`TOPIC_GROUPS` in `frontend/src/api/types.ts`.
 
 Sessions are stored in a SQLite file (`backend/interview_bot.db` by default)
 and survive a restart, so an interview keeps going across a backend reload.
