@@ -18,13 +18,38 @@ describe("startSession", () => {
       json: async () => ({ session_id: "s1", topic: "python", difficulty: "mid" }),
     });
 
-    const session = await api.startSession("python", "mid");
+    const session = await api.startSession("python", "mid", "ollama");
 
     expect(session.session_id).toBe("s1");
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("http://localhost:8000/sessions");
     expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body)).toEqual({ topic: "python", difficulty: "mid" });
+    expect(JSON.parse(init.body)).toEqual({
+      topic: "python",
+      difficulty: "mid",
+      model_provider: "ollama",
+    });
+  });
+});
+
+describe("switchModel", () => {
+  it("patches the session with the chosen provider", async () => {
+    const fetchSpy = mockFetch({
+      json: async () => ({
+        session_id: "s1",
+        topic: "python",
+        difficulty: "mid",
+        model_provider: "anthropic",
+      }),
+    });
+
+    const session = await api.switchModel("s1", "anthropic");
+
+    expect(session.model_provider).toBe("anthropic");
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("http://localhost:8000/sessions/s1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body)).toEqual({ model_provider: "anthropic" });
   });
 });
 
@@ -127,7 +152,7 @@ describe("error handling", () => {
       vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
     );
 
-    await expect(api.startSession("react", "mid")).rejects.toThrow(
+    await expect(api.startSession("react", "mid", "ollama")).rejects.toThrow(
       "Cannot reach the server",
     );
   });

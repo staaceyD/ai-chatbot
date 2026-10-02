@@ -8,7 +8,12 @@ import { ApiError } from "../api/client";
 import type { Api } from "../api/client";
 import type { Explanation, Grade, Question, Session, SessionState } from "../api/types";
 
-const session: Session = { session_id: "s1", topic: "python", difficulty: "mid" };
+const session: Session = {
+  session_id: "s1",
+  topic: "python",
+  difficulty: "mid",
+  model_provider: "ollama",
+};
 
 const question: Question = {
   question_id: "q1",
@@ -34,6 +39,7 @@ const sessionState: SessionState = {
   session_id: "s1",
   topic: "python",
   difficulty: "mid",
+  model_provider: "ollama",
   current_question: question,
   current_grade: null,
   current_explanation: null,
@@ -43,6 +49,7 @@ function fakeApi(overrides: Partial<Api> = {}): Api {
   return {
     resumeSession: vi.fn().mockResolvedValue(sessionState),
     startSession: vi.fn().mockResolvedValue(session),
+    switchModel: vi.fn().mockResolvedValue({ ...session, model_provider: "anthropic" }),
     nextQuestion: vi.fn().mockResolvedValue(question),
     submitAnswer: vi.fn().mockResolvedValue(grade),
     explainQuestion: vi.fn().mockResolvedValue(explanation),
@@ -84,7 +91,7 @@ describe("starting an interview", () => {
     await user.click(screen.getByRole("button", { name: /start interview/i }));
 
     expect(await screen.findByText(question.prompt)).toBeInTheDocument();
-    expect(api.startSession).toHaveBeenCalledWith("react", "senior");
+    expect(api.startSession).toHaveBeenCalledWith("react", "senior", "ollama");
     expect(api.nextQuestion).toHaveBeenCalledWith("s1");
   });
 });
@@ -439,5 +446,75 @@ describe("starting over", () => {
     expect(screen.getByRole("button", { name: /start interview/i })).toBeInTheDocument();
     expect(screen.queryByText(question.prompt)).not.toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+});
+
+
+describe("the model picker", () => {
+  it("starts on the local model", () => {
+    render(<App api={fakeApi()} />);
+
+    expect(screen.getByLabelText(/model/i)).toHaveValue("ollama");
+  });
+
+  it("starts the interview on the model that was picked", async () => {
+    const api = fakeApi();
+    const user = userEvent.setup();
+    render(<App api={api} />);
+
+    await user.selectOptions(screen.getByLabelText(/model/i), "anthropic");
+    await user.click(screen.getByRole("button", { name: /start interview/i }));
+    await screen.findByText(question.prompt);
+
+    expect(api.startSession).toHaveBeenCalledWith("python", "mid", "anthropic");
+  });
+
+  it("says what the hosted model costs once it is chosen", async () => {
+    const user = userEvent.setup();
+    render(<App api={fakeApi()} />);
+
+    expect(screen.queryByText(/a cent a question/i)).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/model/i), "anthropic");
+
+    expect(screen.getByText(/a cent a question/i)).toBeInTheDocument();
+  });
+
+  it("moves a running interview onto the model picked", async () => {
+    const api = fakeApi();
+    const user = await startInterview(api);
+
+    await user.selectOptions(screen.getByLabelText(/model/i), "anthropic");
+
+    await waitFor(() => expect(api.switchModel).toHaveBeenCalledWith("s1", "anthropic"));
+    expect(screen.getByLabelText(/model/i)).toHaveValue("anthropic");
+    // The question on screen is the one already asked, not a new one.
+    expect(api.nextQuestion).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps showing the old model when the switch fails", async () => {
+    const api = fakeApi({
+      switchModel: vi.fn().mockRejectedValue(new ApiError("The model is unavailable", 502)),
+    });
+    const user = await startInterview(api);
+
+    await user.selectOptions(screen.getByLabelText(/model/i), "anthropic");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The model is unavailable");
+    expect(screen.getByLabelText(/model/i)).toHaveValue("ollama");
+  });
+
+  it("comes back on the model a resumed interview was running on", async () => {
+    localStorage.setItem(STORAGE_KEY, "s1");
+    const api = fakeApi({
+      resumeSession: vi.fn().mockResolvedValue({
+        ...sessionState,
+        model_provider: "anthropic",
+      }),
+    });
+    render(<App api={api} />);
+
+    await screen.findByText(question.prompt);
+
+    expect(screen.getByLabelText(/model/i)).toHaveValue("anthropic");
   });
 });

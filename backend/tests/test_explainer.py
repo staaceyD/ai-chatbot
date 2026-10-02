@@ -58,7 +58,7 @@ class GatedClient:
             raise
         if self._fails > 0:
             self._fails -= 1
-            raise LLMError("backend unavailable")
+            raise LLMError("model provider unavailable")
         return json.dumps({"answer": "It is a mutex.", "points": [], "pitfalls": []})
 
     def finish(self) -> None:
@@ -79,7 +79,12 @@ def llm() -> GatedClient:
 
 
 def build(llm: GatedClient, store: InMemorySessionStore, *, prefetch: bool = True) -> Explainer:
-    return Explainer(Interviewer(llm), store, prefetch=prefetch)
+    return Explainer(store, prefetch=prefetch)
+
+
+@pytest.fixture
+def interviewer(llm: GatedClient) -> Interviewer:
+    return Interviewer(llm)
 
 
 async def a_session(store: InMemorySessionStore, question: Question = QUESTION) -> str:
@@ -89,29 +94,29 @@ async def a_session(store: InMemorySessionStore, question: Question = QUESTION) 
 
 
 async def test_a_prefetched_answer_is_written_to_the_store(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     await llm.started.wait()
     llm.finish()
-    explanation = await explainer.explain(session_id, QUESTION)
+    explanation = await explainer.explain(session_id, QUESTION, interviewer)
 
     assert explanation.answer == "It is a mutex."
     assert (await store.get(session_id)).explanations["q1"] == explanation
 
 
 async def test_learn_more_waits_on_the_prefetch_instead_of_asking_twice(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     await llm.started.wait()
-    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION, interviewer))
     llm.finish()
 
     assert (await asked).answer == "It is a mutex."
@@ -119,27 +124,27 @@ async def test_learn_more_waits_on_the_prefetch_instead_of_asking_twice(
 
 
 async def test_prefetching_the_same_question_twice_writes_it_once(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     await llm.started.wait()
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     llm.finish()
-    await explainer.explain(session_id, QUESTION)
+    await explainer.explain(session_id, QUESTION, interviewer)
 
     assert llm.calls == 1
 
 
 async def test_foreground_work_takes_the_model_back(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     await llm.started.wait()
 
     async with explainer.foreground():
@@ -149,47 +154,47 @@ async def test_foreground_work_takes_the_model_back(
 
 
 async def test_nothing_is_prefetched_while_the_model_is_busy(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
     async with explainer.foreground():
-        explainer.prefetch(session_id, QUESTION)
+        explainer.prefetch(session_id, QUESTION, interviewer)
 
     assert llm.calls == 0
 
 
 async def test_a_cancelled_prefetch_is_written_again_on_request(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     await llm.started.wait()
     async with explainer.foreground():
         pass
 
     llm.finish()
-    explanation = await explainer.explain(session_id, QUESTION)
+    explanation = await explainer.explain(session_id, QUESTION, interviewer)
 
     assert explanation.answer == "It is a mutex."
     assert llm.calls == 2
 
 
 async def test_moving_to_the_next_question_drops_the_one_behind(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
     await store.add_question(session_id, ANOTHER)
 
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     await llm.started.wait()
-    explainer.prefetch(session_id, ANOTHER)
+    explainer.prefetch(session_id, ANOTHER, interviewer)
     llm.finish()
-    await explainer.explain(session_id, ANOTHER)
+    await explainer.explain(session_id, ANOTHER, interviewer)
 
     assert llm.cancelled == 1
     assert "q1" not in (await store.get(session_id)).explanations
@@ -201,40 +206,41 @@ async def test_a_failed_write_is_retried_rather_than_remembered(
     llm = GatedClient(fails=1)
     llm.finish()
     explainer = build(llm, store)
+    interviewer = Interviewer(llm)
     session_id = await a_session(store)
 
     with pytest.raises(LLMError):
-        await explainer.explain(session_id, QUESTION)
-    explanation = await explainer.explain(session_id, QUESTION)
+        await explainer.explain(session_id, QUESTION, interviewer)
+    explanation = await explainer.explain(session_id, QUESTION, interviewer)
 
     assert explanation.answer == "It is a mutex."
     assert llm.calls == 2
 
 
 async def test_with_prefetching_off_the_answer_is_written_on_request(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store, prefetch=False)
     session_id = await a_session(store)
 
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     assert llm.calls == 0
 
     llm.finish()
-    assert (await explainer.explain(session_id, QUESTION)).answer == "It is a mutex."
+    assert (await explainer.explain(session_id, QUESTION, interviewer)).answer == "It is a mutex."
 
 
 async def test_a_new_prefetch_leaves_a_waited_on_write_alone(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     """Two tabs on one session: the second must not cancel the first one's request."""
     explainer = build(llm, store)
     session_id = await a_session(store)
     await store.add_question(session_id, ANOTHER)
 
-    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION, interviewer))
     await llm.started.wait()
-    explainer.prefetch(session_id, ANOTHER)
+    explainer.prefetch(session_id, ANOTHER, interviewer)
     llm.finish()
 
     assert (await asked).answer == "It is a mutex."
@@ -242,35 +248,35 @@ async def test_a_new_prefetch_leaves_a_waited_on_write_alone(
 
 
 async def test_a_waiter_giving_up_leaves_the_write_running(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     """A closed tab must not throw away minutes of the model's work."""
     explainer = build(llm, store)
     session_id = await a_session(store)
 
-    gave_up = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    gave_up = asyncio.ensure_future(explainer.explain(session_id, QUESTION, interviewer))
     await llm.started.wait()
     gave_up.cancel()
     with pytest.raises(asyncio.CancelledError):
         await gave_up
     llm.finish()
 
-    assert (await explainer.explain(session_id, QUESTION)).answer == "It is a mutex."
+    assert (await explainer.explain(session_id, QUESTION, interviewer)).answer == "It is a mutex."
     assert llm.calls == 1
     assert llm.cancelled == 0
 
 
 async def test_an_explanation_being_waited_on_holds_the_model(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     """The longest of the three calls is protected like the other two."""
     explainer = build(llm, store)
     session_id = await a_session(store)
     await store.add_question(session_id, ANOTHER)
 
-    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION, interviewer))
     await llm.started.wait()
-    explainer.prefetch(session_id, ANOTHER)
+    explainer.prefetch(session_id, ANOTHER, interviewer)
     llm.finish()
     await asked
 
@@ -279,39 +285,39 @@ async def test_an_explanation_being_waited_on_holds_the_model(
 
 
 async def test_a_finished_write_is_not_kept_in_memory(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
     llm.finish()
-    await explainer.explain(session_id, QUESTION)
+    await explainer.explain(session_id, QUESTION, interviewer)
 
     assert explainer._writing == {}
 
 
 async def test_the_stored_answer_is_reused_instead_of_written_again(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
     llm.finish()
-    await explainer.explain(session_id, QUESTION)
-    explainer.prefetch(session_id, QUESTION)
-    explanation = await explainer.explain(session_id, QUESTION)
+    await explainer.explain(session_id, QUESTION, interviewer)
+    explainer.prefetch(session_id, QUESTION, interviewer)
+    explanation = await explainer.explain(session_id, QUESTION, interviewer)
 
     assert explanation.answer == "It is a mutex."
     assert llm.calls == 1
 
 
 async def test_closing_lets_go_of_work_in_flight(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     explainer = build(llm, store)
     session_id = await a_session(store)
 
-    explainer.prefetch(session_id, QUESTION)
+    explainer.prefetch(session_id, QUESTION, interviewer)
     await llm.started.wait()
     await explainer.aclose()
 
@@ -319,16 +325,50 @@ async def test_closing_lets_go_of_work_in_flight(
 
 
 async def test_closing_lets_go_of_a_write_somebody_is_waiting_on_too(
-    llm: GatedClient, store: InMemorySessionStore
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
 ) -> None:
     """Nothing may still be inside the store or the LLM client when they close."""
     explainer = build(llm, store)
     session_id = await a_session(store)
 
-    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION))
+    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION, interviewer))
     await llm.started.wait()
     await explainer.aclose()
 
     assert llm.cancelled == 1
     with pytest.raises(asyncio.CancelledError):
         await asked
+
+
+async def test_forgetting_a_session_drops_the_answer_written_ahead(
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
+) -> None:
+    """What a model switch does to the answer the old model was writing."""
+    explainer = build(llm, store)
+    session_id = await a_session(store)
+
+    explainer.prefetch(session_id, QUESTION, interviewer)
+    await llm.started.wait()
+    await explainer.forget(session_id)
+
+    assert llm.cancelled == 1
+    assert (await store.get(session_id)).explanations == {}
+
+    llm.finish()
+    assert (await explainer.explain(session_id, QUESTION, interviewer)).answer == "It is a mutex."
+    assert llm.calls == 2
+
+
+async def test_forgetting_leaves_an_answer_somebody_is_waiting_on(
+    llm: GatedClient, store: InMemorySessionStore, interviewer: Interviewer
+) -> None:
+    explainer = build(llm, store)
+    session_id = await a_session(store)
+
+    asked = asyncio.ensure_future(explainer.explain(session_id, QUESTION, interviewer))
+    await llm.started.wait()
+    await explainer.forget(session_id)
+    llm.finish()
+
+    assert (await asked).answer == "It is a mutex."
+    assert llm.cancelled == 0

@@ -4,12 +4,19 @@ from uuid import uuid4
 
 from interview_bot.domain import Difficulty, Explanation, Grade, Question, Topic
 
+# What a session runs on when nobody chose, mirroring the settings default.
+DEFAULT_MODEL_PROVIDER = "ollama"
+
 
 @dataclass
 class Session:
     id: str
     topic: Topic
     difficulty: Difficulty
+    # The model provider this interview uses. Stored per session so a resume
+    # comes back on the model it was running on, and so switching model is a
+    # change to the interview rather than to the whole app.
+    model_provider: str = DEFAULT_MODEL_PROVIDER
     questions: dict[str, Question] = field(default_factory=dict)
     grades: dict[str, Grade] = field(default_factory=dict)
     explanations: dict[str, Explanation] = field(default_factory=dict)
@@ -52,9 +59,13 @@ class SessionStore(Protocol):
 
     async def initialize(self) -> None: ...
 
-    async def create(self, *, topic: Topic, difficulty: Difficulty) -> Session: ...
+    async def create(
+        self, *, topic: Topic, difficulty: Difficulty, model_provider: str = DEFAULT_MODEL_PROVIDER
+    ) -> Session: ...
 
     async def get(self, session_id: str) -> Session | None: ...
+
+    async def set_model_provider(self, session_id: str, model_provider: str) -> None: ...
 
     async def add_question(self, session_id: str, question: Question) -> None: ...
 

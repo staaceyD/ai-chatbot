@@ -14,7 +14,7 @@ from replies import explanation_reply, grade_reply, question_reply
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(llm_backend="echo", prefetch_explanations=True)
+    return Settings(default_model_provider="echo", prefetch_explanations=True)
 
 
 async def eventually(ready: Callable[[], Awaitable[bool]]) -> bool:

@@ -37,12 +37,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-const post = <T,>(path: string, body?: unknown): Promise<T> =>
+const send = <T,>(method: string, path: string, body?: unknown): Promise<T> =>
   request<T>(path, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
   });
+
+const post = <T,>(path: string, body?: unknown): Promise<T> =>
+  send<T>("POST", path, body);
 
 async function errorMessage(response: Response): Promise<string> {
   try {
@@ -61,8 +64,11 @@ export const api = {
       signal: AbortSignal.timeout(RESUME_TIMEOUT_MS),
     }),
 
-  startSession: (topic: Topic, difficulty: Difficulty) =>
-    post<Session>("/sessions", { topic, difficulty }),
+  startSession: (topic: Topic, difficulty: Difficulty, modelProvider: string) =>
+    post<Session>("/sessions", { topic, difficulty, model_provider: modelProvider }),
+
+  switchModel: (sessionId: string, modelProvider: string) =>
+    send<Session>("PATCH", `/sessions/${sessionId}`, { model_provider: modelProvider }),
 
   nextQuestion: (sessionId: string) =>
     post<Question>(`/sessions/${sessionId}/questions`),

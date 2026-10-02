@@ -4,13 +4,14 @@ from pathlib import Path
 import aiosqlite
 
 from interview_bot.domain import Difficulty, Explanation, Grade, Question, Topic
-from interview_bot.store.base import Session, new_session_id
+from interview_bot.store.base import DEFAULT_MODEL_PROVIDER, Session, new_session_id
 
-SCHEMA = """
+SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY,
     topic      TEXT NOT NULL,
-    difficulty TEXT NOT NULL
+    difficulty TEXT NOT NULL,
+    model_provider    TEXT NOT NULL DEFAULT '{DEFAULT_MODEL_PROVIDER}'
 );
 
 CREATE TABLE IF NOT EXISTS questions (
@@ -58,27 +59,65 @@ class SQLiteSessionStore:
         # WAL lets the API keep reading while a question is being written.
         await self._db.execute("PRAGMA journal_mode = WAL")
         await self._db.executescript(SCHEMA)
+        await self._migrate()
         await self._db.commit()
 
-    async def create(self, *, topic: Topic, difficulty: Difficulty) -> Session:
-        session = Session(id=new_session_id(), topic=topic, difficulty=difficulty)
+    async def _migrate(self) -> None:
+        """Bring a file written by an older version up to the current schema.
+
+        CREATE TABLE IF NOT EXISTS leaves an existing table alone, so a column
+        added later has to be added to the file as well, or every read of it
+        fails.
+        """
+        db = self._connection()
+        async with db.execute("PRAGMA table_info(sessions)") as cursor:
+            columns = {row[1] for row in await cursor.fetchall()}
+
+        if "model_provider" in columns:
+            return
+        if "backend" in columns:
+            # What this column was called while it was being built.
+            await db.execute("ALTER TABLE sessions RENAME COLUMN backend TO model_provider")
+            return
+        await db.execute(
+            "ALTER TABLE sessions ADD COLUMN model_provider TEXT NOT NULL"
+            f" DEFAULT '{DEFAULT_MODEL_PROVIDER}'"
+        )
+
+    async def create(
+        self, *, topic: Topic, difficulty: Difficulty, model_provider: str = DEFAULT_MODEL_PROVIDER
+    ) -> Session:
+        session = Session(
+            id=new_session_id(), topic=topic, difficulty=difficulty, model_provider=model_provider
+        )
         await self._connection().execute(
-            "INSERT INTO sessions (id, topic, difficulty) VALUES (?, ?, ?)",
-            (session.id, session.topic.value, session.difficulty.value),
+            "INSERT INTO sessions (id, topic, difficulty, model_provider) VALUES (?, ?, ?, ?)",
+            (session.id, session.topic.value, session.difficulty.value, session.model_provider),
         )
         await self._connection().commit()
         return session
 
+    async def set_model_provider(self, session_id: str, model_provider: str) -> None:
+        await self._connection().execute(
+            "UPDATE sessions SET model_provider = ? WHERE id = ?", (model_provider, session_id)
+        )
+        await self._connection().commit()
+
     async def get(self, session_id: str) -> Session | None:
         db = self._connection()
         async with db.execute(
-            "SELECT topic, difficulty FROM sessions WHERE id = ?", (session_id,)
+            "SELECT topic, difficulty, model_provider FROM sessions WHERE id = ?", (session_id,)
         ) as cursor:
             row = await cursor.fetchone()
         if row is None:
             return None
 
-        session = Session(id=session_id, topic=Topic(row[0]), difficulty=Difficulty(row[1]))
+        session = Session(
+            id=session_id,
+            topic=Topic(row[0]),
+            difficulty=Difficulty(row[1]),
+            model_provider=row[2],
+        )
         async with db.execute(
             "SELECT id, topic, difficulty, prompt, key_points"
             " FROM questions WHERE session_id = ? ORDER BY seq",
