@@ -151,3 +151,28 @@ async def test_an_unexplained_latest_question_has_no_explanation(store: SessionS
     await store.add_question(session.id, a_question("second"))
 
     assert (await store.get(session.id)).latest_explanation is None
+
+
+async def test_a_session_remembers_which_model_it_runs_on(store: SessionStore) -> None:
+    session = await store.create(
+        topic=Topic.PYTHON, difficulty=Difficulty.MID, model_provider="anthropic"
+    )
+
+    loaded = await store.get(session.id)
+
+    assert loaded is not None
+    assert loaded.model_provider == "anthropic"
+
+
+async def test_a_session_defaults_to_the_local_model(store: SessionStore) -> None:
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+
+    assert (await store.get(session.id)).model_provider == "ollama"
+
+
+async def test_switching_model_is_stored(store: SessionStore) -> None:
+    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+
+    await store.set_model_provider(session.id, "anthropic")
+
+    assert (await store.get(session.id)).model_provider == "anthropic"

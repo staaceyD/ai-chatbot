@@ -3,12 +3,13 @@
 A local chatbot for practising software engineering interview questions —
 languages and frameworks as well as engineering fundamentals such as system
 design, databases, algorithms and data structures. Answers are graded by a
-model running on your own machine.
+model — either one running on your own machine, or a hosted Claude model if
+you would rather have the speed.
 
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- [Ollama](https://ollama.com/download)
+- [Ollama](https://ollama.com/download), unless you run against a hosted model
 - Node 20 or newer, with npm 11 or newer
 
 ## Setup
@@ -34,6 +35,9 @@ ollama serve
 ollama pull qwen3:4b-instruct
 ```
 
+Or skip Ollama and use a hosted model instead — see [Running against a hosted
+model](#running-against-a-hosted-model).
+
 ## Run
 
 The app needs both halves running, in two terminals.
@@ -55,6 +59,12 @@ npm run dev
 Open http://localhost:5173 and pick a topic. The API is on
 http://localhost:8000, with interactive docs on http://localhost:8000/docs.
 
+A **Model** dropdown above the topic sits over the whole interview. It starts
+on **Ollama (free)**, the model on your own machine, and switching it to
+**Claude** moves the interview onto the hosted model from the next question
+onwards — see [Running against a hosted model](#running-against-a-hosted-model)
+for what that needs and what it costs.
+
 A grade comes with a **Learn more** button. It writes the answer out in full —
 a few paragraphs, every key point expanded, and the mistakes people usually
 make — so you can learn the question without going off to search for it. It
@@ -68,9 +78,9 @@ wait for.
 Refreshing the page picks the interview back up where you left it. Use
 **Start over** to drop it and choose a different topic.
 
-Answers are graded by a model running on your machine, so expect each
-question and each grade to take a few seconds, and a worked answer to take
-longer — it is several times as much writing.
+On the local model, expect each question and each grade to take a few
+seconds, and a worked answer to take longer — it is several times as much
+writing. A hosted model is quicker on all three.
 
 Check the backend came up:
 
@@ -146,6 +156,38 @@ done. Answering quickly costs you the head start, never a slower grade.
 Set `INTERVIEW_BOT_PREFETCH_EXPLANATIONS=false` to turn it off and write the
 answer only when it is asked for.
 
+Switching model mid-interview drops a worked answer being written ahead: it is
+the old model's, nobody has asked for it yet, and the next request writes it
+again on the new one. An answer somebody is already waiting on is left to
+finish.
+
+## Choosing the model
+
+Which model an interview runs on belongs to the session, not to the process.
+It is chosen when the session starts and can be changed at any point:
+
+```sh
+# Start an interview on a specific model
+curl -s -X POST http://localhost:8000/sessions \
+  -H 'content-type: application/json' \
+  -d '{"topic":"python","difficulty":"mid","model_provider":"anthropic"}' | jq
+
+# Move a running interview onto another one
+curl -s -X PATCH http://localhost:8000/sessions/$SESSION \
+  -H 'content-type: application/json' \
+  -d '{"model_provider":"ollama"}' | jq
+```
+
+Providers are `ollama`, `anthropic` and `echo`. A request that leaves
+`model_provider` out gets `INTERVIEW_BOT_DEFAULT_MODEL_PROVIDER`; the browser
+always sends one, so that setting is the default for API callers rather than
+for the dropdown, which starts on Ollama. `GET /health` lists every provider a
+session can be switched to.
+
+The choice is stored with the session, so resuming after a refresh comes back
+on the model the interview was running on, and every call of that interview —
+the question, the grade and the worked answer — goes to it.
+
 ## Configuration
 
 Settings are read from the environment, or from `backend/.env`. All of them
@@ -153,9 +195,11 @@ have defaults, so you only need to set what you want to change.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `INTERVIEW_BOT_LLM_BACKEND` | `ollama` | Model provider: `ollama`, or `echo` for canned replies |
+| `INTERVIEW_BOT_DEFAULT_MODEL_PROVIDER` | `ollama` | Provider a session gets when it does not choose one: `ollama`, `anthropic`, or `echo` for canned replies |
 | `INTERVIEW_BOT_OLLAMA_MODEL` | `qwen3:4b-instruct` | Which Ollama model to use |
 | `INTERVIEW_BOT_OLLAMA_BASE_URL` | `http://localhost:11434` | Where Ollama is listening |
+| `INTERVIEW_BOT_ANTHROPIC_MODEL` | `claude-haiku-4-5` | Which hosted Claude model to use |
+| `INTERVIEW_BOT_ANTHROPIC_MAX_TOKENS` | `4096` | Longest reply the hosted model may write |
 | `INTERVIEW_BOT_LLM_TIMEOUT_SECONDS` | `120` | Give up on a slow model after this long |
 | `INTERVIEW_BOT_LLM_EXPLAIN_TIMEOUT_SECONDS` | `300` | The same, for a worked answer, which is several times longer |
 | `INTERVIEW_BOT_PREFETCH_EXPLANATIONS` | `true` | Write worked answers ahead, during the idle time while you answer |
@@ -166,11 +210,52 @@ have defaults, so you only need to set what you want to change.
 The frontend reads `VITE_API_URL` (default `http://localhost:8000`) to find
 the backend.
 
-To run without Ollama at all:
+To run without a model at all:
 
 ```sh
-INTERVIEW_BOT_LLM_BACKEND=echo uv run uvicorn interview_bot.main:app --reload
+INTERVIEW_BOT_DEFAULT_MODEL_PROVIDER=echo uv run uvicorn interview_bot.main:app --reload
 ```
+
+## Running against a hosted model
+
+A 4B model on a laptop is the slow part of this app. Pointing it at a hosted
+Claude model instead needs an API key from the
+[Claude Console](https://platform.claude.com/settings/keys) and one
+environment variable:
+
+```sh
+export ANTHROPIC_API_KEY=sk-ant-...
+INTERVIEW_BOT_DEFAULT_MODEL_PROVIDER=anthropic uv run uvicorn interview_bot.main:app --reload
+```
+
+The default is `claude-haiku-4-5`, the cheapest model Anthropic serves. One
+question — asking it, grading the answer, and writing the worked answer — is
+about 1,000 tokens in and 1,250 out, so roughly $0.007, or $0.07 for a
+ten-question session. Switching to `claude-sonnet-5` is about twice that.
+
+Nothing else changes: the same prompts, the same stored sessions, and the
+`echo` provider still works for tests. Set
+`INTERVIEW_BOT_DEFAULT_MODEL_PROVIDER` back to `ollama`, or just pick Ollama in
+the dropdown, to go back to running locally.
+
+A Claude Pro or Max subscription does not cover this: the API is billed per
+token, separately from the subscription, and a subscription cannot be used to
+authenticate requests from an app like this one. Running on `ollama` is the
+way to spend nothing.
+
+### Capping what it can spend
+
+The app has no budget of its own — the cap belongs on the key, where nothing
+in this repo can get around it:
+
+1. In the Console, under
+   [Settings > Workspaces](https://platform.claude.com/settings/workspaces),
+   create a workspace (the Default Workspace cannot carry limits, and the
+   section only appears once the account is set up as an organization).
+2. On its **Spend limits** tab, set a monthly ceiling and an alert threshold.
+3. Create an API key scoped to that workspace, and use that key here.
+
+Spending by this app then stops at the ceiling whatever the code does.
 
 ## Tests
 

@@ -30,33 +30,36 @@ class Explainer:
     moment a question, a grade, or an answer somebody clicked through to needs
     the model, and started again afterwards. Writing that somebody is waiting
     on is never cancelled in turn: it is their request.
+
+    Which model to write with is decided per session, so the interviewer comes
+    in with each request rather than being held here.
     """
 
     def __init__(
         self,
-        interviewer: Interviewer,
         store: SessionStore,
         *,
         prefetch: bool = True,
     ) -> None:
-        self._interviewer = interviewer
         self._store = store
         self._prefetch = prefetch
         # One question per session is worth writing ahead: the one on screen.
         self._writing: dict[str, _Writing] = {}
         self._waiting_on_the_model = 0
 
-    def prefetch(self, session_id: str, question: Question) -> None:
+    def prefetch(self, session_id: str, question: Question, interviewer: Interviewer) -> None:
         """Begin writing the worked answer for a question nobody has asked about yet."""
         if not self._prefetch or self._waiting_on_the_model:
             return
-        self._start(session_id, question, prefetch=True)
+        self._start(session_id, question, interviewer, prefetch=True)
 
-    async def explain(self, session_id: str, question: Question) -> Explanation:
+    async def explain(
+        self, session_id: str, question: Question, interviewer: Interviewer
+    ) -> Explanation:
         """The worked answer, waiting on a prefetch already under way if there is one."""
         writing = self._writing.get(session_id)
         if writing is None or writing.question_id != question.id:
-            writing = self._start(session_id, question, prefetch=False)
+            writing = self._start(session_id, question, interviewer, prefetch=False)
         # Marked before the model is held, so `foreground` leaves alone the very
         # write that is being waited on.
         writing.prefetch = False
@@ -76,6 +79,20 @@ class Explainer:
         finally:
             self._waiting_on_the_model -= 1
 
+    async def forget(self, session_id: str) -> None:
+        """Drop a worked answer being written ahead for one session.
+
+        Used when the session changes model: the answer in flight is the old
+        model's, and nobody has asked for it yet, so it is cheaper to throw it
+        away than to serve it later as though it came from the new one. An
+        answer somebody is already waiting on is left alone, as everywhere else.
+        """
+        writing = self._writing.get(session_id)
+        if writing is None or not writing.prefetch:
+            return
+        del self._writing[session_id]
+        await self._settle([writing])
+
     async def aclose(self) -> None:
         """Let go of the model and the store before the app closes them.
 
@@ -86,7 +103,9 @@ class Explainer:
         """
         await self._settle(self._writing.values())
 
-    def _start(self, session_id: str, question: Question, *, prefetch: bool) -> _Writing:
+    def _start(
+        self, session_id: str, question: Question, interviewer: Interviewer, *, prefetch: bool
+    ) -> _Writing:
         writing = self._writing.get(session_id)
         if writing is not None and writing.question_id == question.id:
             return writing
@@ -95,7 +114,7 @@ class Explainer:
         # nobody's answer any more.
         self._cancel(writing)
 
-        task = asyncio.create_task(self._write(session_id, question))
+        task = asyncio.create_task(self._write(session_id, question, interviewer))
         # Nothing ever awaits a prefetch that is not asked for, so read its
         # outcome here: an unretrieved failure surfaces as a stray warning.
         task.add_done_callback(_retrieve)
@@ -104,13 +123,15 @@ class Explainer:
         self._writing[session_id] = started
         return started
 
-    async def _write(self, session_id: str, question: Question) -> Explanation:
+    async def _write(
+        self, session_id: str, question: Question, interviewer: Interviewer
+    ) -> Explanation:
         try:
             # A finished write is not kept in `_writing`, so the store is what
             # says whether this question has been written out already.
             explanation = await self._written(session_id, question.id)
             if explanation is None:
-                explanation = await self._interviewer.explain(question=question)
+                explanation = await interviewer.explain(question=question)
                 await self._store.record_explanation(session_id, question.id, explanation)
         finally:
             # Nothing is tracked once it is over: on success the store holds the

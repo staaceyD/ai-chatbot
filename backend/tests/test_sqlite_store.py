@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import aiosqlite
 import pytest
 
 from interview_bot.config import Settings
@@ -133,3 +134,50 @@ async def test_factory_rejects_an_unknown_backend() -> None:
 
     with pytest.raises(ValueError, match="postgres"):
         build_session_store(settings)
+
+
+async def test_a_file_from_before_the_model_column_still_opens(tmp_path: Path) -> None:
+    """The migration a file written before the choice existed needs."""
+    path = tmp_path / "interview_bot.db"
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            "CREATE TABLE sessions ("
+            " id TEXT PRIMARY KEY, topic TEXT NOT NULL, difficulty TEXT NOT NULL)"
+        )
+        await db.execute(
+            "INSERT INTO sessions (id, topic, difficulty) VALUES ('old', 'python', 'mid')"
+        )
+        await db.commit()
+
+    store = await open_store(path)
+    loaded = await store.get("old")
+    await store.aclose()
+
+    assert loaded is not None
+    assert loaded.topic == Topic.PYTHON
+    # An interview started before there was a choice runs on the local model.
+    assert loaded.model_provider == "ollama"
+
+
+async def test_a_file_that_called_the_column_backend_still_opens(tmp_path: Path) -> None:
+    """The migration a file written while the column had its old name needs."""
+    path = tmp_path / "interview_bot.db"
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            "CREATE TABLE sessions ("
+            " id TEXT PRIMARY KEY, topic TEXT NOT NULL, difficulty TEXT NOT NULL,"
+            " backend TEXT NOT NULL DEFAULT 'ollama')"
+        )
+        await db.execute(
+            "INSERT INTO sessions (id, topic, difficulty, backend)"
+            " VALUES ('old', 'python', 'mid', 'anthropic')"
+        )
+        await db.commit()
+
+    store = await open_store(path)
+    loaded = await store.get("old")
+    await store.aclose()
+
+    assert loaded is not None
+    # Renamed rather than added, so the interview keeps the model it was on.
+    assert loaded.model_provider == "anthropic"

@@ -2,7 +2,7 @@ from typing import Protocol, runtime_checkable
 
 
 class LLMError(RuntimeError):
-    """A backend could not produce a completion."""
+    """A model provider could not produce a completion."""
 
 
 @runtime_checkable

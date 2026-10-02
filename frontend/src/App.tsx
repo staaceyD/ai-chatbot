@@ -4,6 +4,7 @@ import { api as defaultApi, ApiError } from "./api/client";
 import type { Api } from "./api/client";
 import type { Difficulty, Explanation, Grade, Question, Topic } from "./api/types";
 import { GradeCard } from "./components/GradeCard";
+import { ModelPicker } from "./components/ModelPicker";
 import { QuestionCard } from "./components/QuestionCard";
 import { TopicPicker } from "./components/TopicPicker";
 import { forgetSession, recallSession, rememberSession } from "./storage";
@@ -11,6 +12,8 @@ import { forgetSession, recallSession, rememberSession } from "./storage";
 export function App({ api = defaultApi }: { api?: Api }) {
   const [topic, setTopic] = useState<Topic>("python");
   const [difficulty, setDifficulty] = useState<Difficulty>("mid");
+  // The local model to begin with: nothing is spent until this is changed.
+  const [modelProvider, setModelProvider] = useState<string>("ollama");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
   const [grade, setGrade] = useState<Grade | null>(null);
@@ -44,6 +47,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         setSessionId(state.session_id);
         setTopic(state.topic);
         setDifficulty(state.difficulty);
+        setModelProvider(state.model_provider);
         setQuestion(state.current_question);
         // Restored alongside the question, so answering it again is never the
         // only way forward after a refresh.
@@ -79,7 +83,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   // screen never blanks out while the model is thinking.
   const start = () =>
     run(async () => {
-      const session = await api.startSession(topic, difficulty);
+      const session = await api.startSession(topic, difficulty, modelProvider);
       const first = await api.nextQuestion(session.session_id);
       rememberSession(session.session_id);
       setSessionId(session.session_id);
@@ -102,6 +106,19 @@ export function App({ api = defaultApi }: { api?: Api }) {
       if (!sessionId || !question) return;
       setGrade(await api.submitAnswer(sessionId, question.question_id, text));
     });
+
+  // Before an interview starts this only picks what to start on. Once one is
+  // running it moves that interview across, from the next question onwards.
+  const chooseModel = (chosen: string) => {
+    if (chosen === modelProvider) return;
+    if (sessionId === null) {
+      setModelProvider(chosen);
+      return;
+    }
+    void run(async () => {
+      setModelProvider((await api.switchModel(sessionId, chosen)).model_provider);
+    });
+  };
 
   const learnMore = () =>
     run(async () => {
@@ -130,6 +147,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
   return (
     <main>
       <h1>Interview Bot</h1>
+
+      <ModelPicker modelProvider={modelProvider} disabled={busy} onChange={chooseModel} />
 
       {sessionId === null ? (
         <TopicPicker

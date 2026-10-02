@@ -1,7 +1,16 @@
+from collections.abc import Mapping
+
 from fastapi import APIRouter, HTTPException, status
 
-from interview_bot.deps import ExplainerDep, InterviewerDep, LLMClientDep, SessionStoreDep
+from interview_bot.deps import (
+    ExplainerDep,
+    InterviewersDep,
+    LLMClientsDep,
+    SessionStoreDep,
+    SettingsDep,
+)
 from interview_bot.domain import Explanation, Grade, Question
+from interview_bot.interviewer import Interviewer
 from interview_bot.schemas import (
     AnswerRequest,
     HealthResponse,
@@ -10,6 +19,7 @@ from interview_bot.schemas import (
     SessionResponse,
     SessionStateResponse,
     StartSessionRequest,
+    SwitchModelRequest,
 )
 from interview_bot.store import Session, SessionStore
 
@@ -30,6 +40,18 @@ def _require_question(session: Session, question_id: str) -> Question:
     return question
 
 
+def _interviewer_for(model_provider: str, interviewers: Mapping[str, Interviewer]) -> Interviewer:
+    """The interviewer running one named model."""
+    interviewer = interviewers.get(model_provider)
+    if interviewer is None:
+        # Only reachable from a session stored before a provider was removed.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"The {model_provider} model is not configured",
+        )
+    return interviewer
+
+
 def _as_response(question: Question) -> QuestionResponse:
     return QuestionResponse(
         question_id=question.id,
@@ -39,19 +61,38 @@ def _as_response(question: Question) -> QuestionResponse:
     )
 
 
-@router.get("/health")
-async def health(client: LLMClientDep) -> HealthResponse:
-    return HealthResponse(status="ok", llm=LLMInfo(backend=client.name, model=client.model))
-
-
-@router.post("/sessions", status_code=status.HTTP_201_CREATED)
-async def start_session(body: StartSessionRequest, store: SessionStoreDep) -> SessionResponse:
-    session = await store.create(topic=body.topic, difficulty=body.difficulty)
+def _as_session(session: Session) -> SessionResponse:
     return SessionResponse(
         session_id=session.id,
         topic=session.topic,
         difficulty=session.difficulty,
+        model_provider=session.model_provider,
     )
+
+
+@router.get("/health")
+async def health(clients: LLMClientsDep, settings: SettingsDep) -> HealthResponse:
+    default = clients[settings.default_model_provider]
+    return HealthResponse(
+        status="ok",
+        llm=LLMInfo(model_provider=default.name, model=default.model),
+        available=[
+            LLMInfo(model_provider=model_provider, model=client.model)
+            for model_provider, client in clients.items()
+        ],
+    )
+
+
+@router.post("/sessions", status_code=status.HTTP_201_CREATED)
+async def start_session(
+    body: StartSessionRequest, store: SessionStoreDep, settings: SettingsDep
+) -> SessionResponse:
+    session = await store.create(
+        topic=body.topic,
+        difficulty=body.difficulty,
+        model_provider=body.model_provider or settings.default_model_provider,
+    )
+    return _as_session(session)
 
 
 @router.get("/sessions/{session_id}")
@@ -62,20 +103,48 @@ async def resume_session(session_id: str, store: SessionStoreDep) -> SessionStat
         session_id=session.id,
         topic=session.topic,
         difficulty=session.difficulty,
+        model_provider=session.model_provider,
         current_question=_as_response(current) if current else None,
         current_grade=session.latest_grade,
         current_explanation=session.latest_explanation,
     )
 
 
+@router.patch("/sessions/{session_id}")
+async def switch_model(
+    session_id: str,
+    body: SwitchModelRequest,
+    store: SessionStoreDep,
+    interviewers: InterviewersDep,
+    explainer: ExplainerDep,
+) -> SessionResponse:
+    """Move an interview onto another model, from the next question onwards."""
+    session = await _require_session(store, session_id)
+    if body.model_provider == session.model_provider:
+        return _as_session(session)
+
+    # Checked before anything is stored, so a session is never left pointing at
+    # a model that cannot answer it.
+    _interviewer_for(body.model_provider, interviewers)
+
+    await store.set_model_provider(session.id, body.model_provider)
+    # The worked answer being written ahead is the old model's, and nobody has
+    # asked for it yet, so it is dropped rather than served as the new one's.
+    await explainer.forget(session.id)
+
+    session.model_provider = body.model_provider
+    return _as_session(session)
+
+
 @router.post("/sessions/{session_id}/questions", status_code=status.HTTP_201_CREATED)
 async def next_question(
     session_id: str,
     store: SessionStoreDep,
-    interviewer: InterviewerDep,
+    interviewers: InterviewersDep,
     explainer: ExplainerDep,
 ) -> QuestionResponse:
     session = await _require_session(store, session_id)
+    interviewer = _interviewer_for(session.model_provider, interviewers)
 
     async with explainer.foreground():
         question = await interviewer.generate_question(
@@ -86,7 +155,7 @@ async def next_question(
     await store.add_question(session.id, question)
 
     # The model is free now and stays free while the question is answered
-    explainer.prefetch(session.id, question)
+    explainer.prefetch(session.id, question, interviewer)
     return _as_response(question)
 
 
@@ -95,19 +164,20 @@ async def submit_answer(
     session_id: str,
     body: AnswerRequest,
     store: SessionStoreDep,
-    interviewer: InterviewerDep,
+    interviewers: InterviewersDep,
     explainer: ExplainerDep,
 ) -> Grade:
     session = await _require_session(store, session_id)
     question = _require_question(session, body.question_id)
+    interviewer = _interviewer_for(session.model_provider, interviewers)
 
     async with explainer.foreground():
         grade = await interviewer.grade(question=question, answer=body.answer)
     await store.record_grade(session.id, question.id, grade)
 
-    # Picked up again in case answering interrupted it, or the backend restarted
+    # Picked up again in case answering interrupted it, or the API restarted
     # between the question and the answer.
-    explainer.prefetch(session.id, question)
+    explainer.prefetch(session.id, question, interviewer)
     return grade
 
 
@@ -116,6 +186,7 @@ async def explain_question(
     session_id: str,
     question_id: str,
     store: SessionStoreDep,
+    interviewers: InterviewersDep,
     explainer: ExplainerDep,
 ) -> Explanation:
     session = await _require_session(store, session_id)
@@ -132,4 +203,6 @@ async def explain_question(
 
     # Written ahead while the question was being answered, in which case this
     # returns as fast as the store can hand it over.
-    return await explainer.explain(session.id, question)
+    return await explainer.explain(
+        session.id, question, _interviewer_for(session.model_provider, interviewers)
+    )

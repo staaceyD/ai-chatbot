@@ -66,6 +66,7 @@ async def test_resume_returns_the_question_in_progress(api: AsyncClient, llm: Ec
         "session_id": session_id,
         "topic": "python",
         "difficulty": "mid",
+        "model_provider": "echo",
         "current_question": asked,
         "current_grade": None,
         "current_explanation": None,

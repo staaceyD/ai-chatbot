@@ -9,7 +9,7 @@ from interview_bot.api import router
 from interview_bot.config import Settings, get_settings
 from interview_bot.explainer import Explainer
 from interview_bot.interviewer import Interviewer
-from interview_bot.llm import LLMClient, LLMError, build_llm_client
+from interview_bot.llm import MODEL_PROVIDERS, LLMClient, LLMError, build_llm_clients
 from interview_bot.store import SessionStore, build_session_store
 
 
@@ -22,14 +22,22 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.llm_client = llm_client or build_llm_client(settings)
+        # An injected client stands in for every provider, so a test can pick
+        # any of them and still be talking to the one it set up.
+        app.state.llm_clients = (
+            {provider: llm_client for provider in MODEL_PROVIDERS}
+            if llm_client
+            else build_llm_clients(settings)
+        )
+        app.state.interviewers = {
+            provider: Interviewer(
+                client, explain_timeout_seconds=settings.llm_explain_timeout_seconds
+            )
+            for provider, client in app.state.llm_clients.items()
+        }
         app.state.session_store = session_store or build_session_store(settings)
         await app.state.session_store.initialize()
         app.state.explainer = Explainer(
-            Interviewer(
-                app.state.llm_client,
-                explain_timeout_seconds=settings.llm_explain_timeout_seconds,
-            ),
             app.state.session_store,
             prefetch=settings.prefetch_explanations,
         )
@@ -37,10 +45,15 @@ def create_app(
             yield
         finally:
             await app.state.explainer.aclose()
-            await app.state.llm_client.aclose()
+            # dict.fromkeys drops the duplicates an injected client leaves behind.
+            for client in dict.fromkeys(app.state.llm_clients.values()):
+                await client.aclose()
             await app.state.session_store.aclose()
 
     app = FastAPI(title="Interview Bot", version="0.1.0", lifespan=lifespan)
+    # Read back by the request handlers, so they see the settings this app was
+    # built with rather than the process-wide ones.
+    app.state.settings = settings
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

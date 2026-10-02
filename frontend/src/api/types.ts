@@ -34,6 +34,16 @@ export const TOPIC_LABELS: Record<Topic, string> = Object.fromEntries(
   TOPIC_GROUPS.flatMap((group) => group.topics.map((topic) => [topic.value, topic.label])),
 ) as Record<Topic, string>;
 
+// Labelled here rather than read from the server, like the topic list: which
+// models to offer is a product decision, not a configuration detail. The values
+// are the provider names the API accepts.
+export const MODEL_PROVIDERS = [
+  { value: "ollama", label: "Ollama (free)" },
+  { value: "anthropic", label: "Claude" },
+] as const;
+
+export type ModelProvider = (typeof MODEL_PROVIDERS)[number]["value"];
+
 export const DIFFICULTIES = ["junior", "mid", "senior"] as const;
 
 export type Difficulty = (typeof DIFFICULTIES)[number];
@@ -42,6 +52,7 @@ export type Session = {
   session_id: string;
   topic: Topic;
   difficulty: Difficulty;
+  model_provider: string;
 };
 
 export type Question = {
@@ -73,6 +84,7 @@ export type SessionState = {
   session_id: string;
   topic: Topic;
   difficulty: Difficulty;
+  model_provider: string;
   current_question: Question | null;
   current_grade: Grade | null;
   current_explanation: Explanation | null;

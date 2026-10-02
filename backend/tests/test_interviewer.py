@@ -118,8 +118,8 @@ async def test_question_without_key_points_becomes_llm_error() -> None:
         )
 
 
-async def test_backend_failure_propagates() -> None:
-    with pytest.raises(LLMError, match="backend unavailable"):
+async def test_model_provider_failure_propagates() -> None:
+    with pytest.raises(LLMError, match="model provider unavailable"):
         await Interviewer(FailingClient()).generate_question(
             topic=Topic.PYTHON, difficulty=Difficulty.MID
         )

@@ -48,7 +48,9 @@ class FailingClient:
 
     name = "failing"
 
-    def __init__(self, *, model: str = "failing", message: str = "backend unavailable") -> None:
+    def __init__(
+        self, *, model: str = "failing", message: str = "model provider unavailable"
+    ) -> None:
         self.model = model
         self._message = message
 

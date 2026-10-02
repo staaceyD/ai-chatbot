@@ -2,6 +2,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, Field
 
+from interview_bot.config import ModelProvider
 from interview_bot.domain import Difficulty, Explanation, Grade, Topic
 
 
@@ -18,12 +19,18 @@ Answer = Annotated[str, Field(max_length=5000), AfterValidator(_non_blank)]
 class StartSessionRequest(BaseModel):
     topic: Topic
     difficulty: Difficulty = Difficulty.MID
+    model_provider: ModelProvider | None = None
+
+
+class SwitchModelRequest(BaseModel):
+    model_provider: ModelProvider
 
 
 class SessionResponse(BaseModel):
     session_id: str
     topic: Topic
     difficulty: Difficulty
+    model_provider: str
 
 
 class QuestionResponse(BaseModel):
@@ -39,6 +46,7 @@ class SessionStateResponse(BaseModel):
     session_id: str
     topic: Topic
     difficulty: Difficulty
+    model_provider: str
     current_question: QuestionResponse | None
     # Set when the current question was already answered, so a resume shows the
     # grade the candidate has already seen instead of asking again.
@@ -54,10 +62,11 @@ class AnswerRequest(BaseModel):
 
 
 class LLMInfo(BaseModel):
-    backend: str
+    model_provider: str
     model: str
 
 
 class HealthResponse(BaseModel):
     status: str
     llm: LLMInfo
+    available: list[LLMInfo]
