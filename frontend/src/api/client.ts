@@ -64,8 +64,8 @@ export const api = {
       signal: AbortSignal.timeout(RESUME_TIMEOUT_MS),
     }),
 
-  startSession: (topic: Topic, difficulty: Difficulty, modelProvider: string) =>
-    post<Session>("/sessions", { topic, difficulty, model_provider: modelProvider }),
+  startSession: (topics: Topic[], difficulty: Difficulty, modelProvider: string) =>
+    post<Session>("/sessions", { topics, difficulty, model_provider: modelProvider }),
 
   switchModel: (sessionId: string, modelProvider: string) =>
     send<Session>("PATCH", `/sessions/${sessionId}`, { model_provider: modelProvider }),

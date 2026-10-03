@@ -35,7 +35,7 @@ async def test_sessions_survive_a_restart(tmp_path: Path) -> None:
     path = tmp_path / "interview_bot.db"
 
     first_run = await open_store(path)
-    session = await first_run.create(topic=Topic.REACT, difficulty=Difficulty.SENIOR)
+    session = await first_run.create(topics=[Topic.REACT], difficulty=Difficulty.SENIOR)
     await first_run.add_question(session.id, a_question("What is the virtual DOM?"))
     await first_run.aclose()
 
@@ -44,7 +44,7 @@ async def test_sessions_survive_a_restart(tmp_path: Path) -> None:
     await second_run.aclose()
 
     assert loaded is not None
-    assert loaded.topic == Topic.REACT
+    assert loaded.topics == [Topic.REACT]
     assert loaded.difficulty == Difficulty.SENIOR
     assert loaded.asked_prompts == ["What is the virtual DOM?"]
 
@@ -53,7 +53,7 @@ async def test_reopening_does_not_wipe_existing_data(tmp_path: Path) -> None:
     path = tmp_path / "interview_bot.db"
 
     first_run = await open_store(path)
-    session = await first_run.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    session = await first_run.create(topics=[Topic.PYTHON], difficulty=Difficulty.MID)
     await first_run.add_question(session.id, a_question("first"))
     await first_run.aclose()
 
@@ -69,7 +69,7 @@ async def test_grades_survive_a_restart(tmp_path: Path) -> None:
     path = tmp_path / "interview_bot.db"
 
     first_run = await open_store(path)
-    session = await first_run.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    session = await first_run.create(topics=[Topic.PYTHON], difficulty=Difficulty.MID)
     await first_run.add_question(session.id, a_question("What is the GIL?"))
     await first_run.record_grade(
         session.id, "What is the GIL?", Grade(score=4, verdict="Good answer.")
@@ -85,7 +85,7 @@ async def test_grades_survive_a_restart(tmp_path: Path) -> None:
 
 async def test_a_grade_needs_an_existing_question(tmp_path: Path) -> None:
     store = await open_store(tmp_path / "interview_bot.db")
-    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    session = await store.create(topics=[Topic.PYTHON], difficulty=Difficulty.MID)
 
     with pytest.raises(Exception, match="FOREIGN KEY"):
         await store.record_grade(session.id, "no-such-question", Grade(score=1, verdict="?"))
@@ -97,7 +97,7 @@ async def test_creates_the_database_file(tmp_path: Path) -> None:
     path = tmp_path / "nested" / "dir" / "interview_bot.db"
 
     store = await open_store(path)
-    await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    await store.create(topics=[Topic.PYTHON], difficulty=Difficulty.MID)
     await store.aclose()
 
     assert path.exists()
@@ -154,9 +154,35 @@ async def test_a_file_from_before_the_model_column_still_opens(tmp_path: Path) -
     await store.aclose()
 
     assert loaded is not None
-    assert loaded.topic == Topic.PYTHON
+    assert loaded.topics == [Topic.PYTHON]
     # An interview started before there was a choice runs on the local model.
     assert loaded.model_provider == "ollama"
+
+
+async def test_a_file_from_before_mixed_topics_still_opens(tmp_path: Path) -> None:
+    """The migration a file written while a session had one topic needs."""
+    path = tmp_path / "interview_bot.db"
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            "CREATE TABLE sessions ("
+            " id TEXT PRIMARY KEY, topic TEXT NOT NULL, difficulty TEXT NOT NULL,"
+            " model_provider TEXT NOT NULL DEFAULT 'ollama')"
+        )
+        await db.execute(
+            "INSERT INTO sessions (id, topic, difficulty) VALUES ('old', 'react', 'senior')"
+        )
+        await db.commit()
+
+    store = await open_store(path)
+    loaded = await store.get("old")
+    # A session from before the list existed still takes new questions.
+    await store.add_question("old", a_question("What is the virtual DOM?"))
+    await store.aclose()
+
+    assert loaded is not None
+    # The one topic it was started on, now as the only topic it covers.
+    assert loaded.topics == [Topic.REACT]
+    assert loaded.difficulty == Difficulty.SENIOR
 
 
 async def test_a_file_that_called_the_column_backend_still_opens(tmp_path: Path) -> None:

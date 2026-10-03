@@ -10,7 +10,7 @@ import type { Explanation, Grade, Question, Session, SessionState } from "../api
 
 const session: Session = {
   session_id: "s1",
-  topic: "python",
+  topics: ["python"],
   difficulty: "mid",
   model_provider: "ollama",
 };
@@ -37,7 +37,7 @@ const explanation: Explanation = {
 
 const sessionState: SessionState = {
   session_id: "s1",
-  topic: "python",
+  topics: ["python"],
   difficulty: "mid",
   model_provider: "ollama",
   current_question: question,
@@ -86,13 +86,57 @@ describe("starting an interview", () => {
     const user = userEvent.setup();
     render(<App api={api} />);
 
-    await user.selectOptions(screen.getByLabelText(/topic/i), "react");
+    await user.click(screen.getByRole("checkbox", { name: "Python" }));
+    await user.click(screen.getByRole("checkbox", { name: "React" }));
     await user.selectOptions(screen.getByLabelText(/difficulty/i), "senior");
     await user.click(screen.getByRole("button", { name: /start interview/i }));
 
     expect(await screen.findByText(question.prompt)).toBeInTheDocument();
-    expect(api.startSession).toHaveBeenCalledWith("react", "senior", "ollama");
+    expect(api.startSession).toHaveBeenCalledWith(["react"], "senior", "ollama");
     expect(api.nextQuestion).toHaveBeenCalledWith("s1");
+  });
+
+  it("starts one interview over several topics at once", async () => {
+    const api = fakeApi();
+    const user = userEvent.setup();
+    render(<App api={api} />);
+
+    await user.click(screen.getByRole("checkbox", { name: "Databases and SQL" }));
+    await user.click(screen.getByRole("checkbox", { name: "System design" }));
+    await user.click(screen.getByRole("button", { name: /start interview/i }));
+
+    await screen.findByText(question.prompt);
+    expect(api.startSession).toHaveBeenCalledWith(
+      ["python", "system_design", "databases"],
+      "mid",
+      "ollama",
+    );
+  });
+
+  it("tags each question with the topic it came from", async () => {
+    const second = {
+      ...question,
+      question_id: "q2",
+      prompt: "What does an index cost on write?",
+      topic: "databases" as const,
+    };
+    const api = fakeApi({
+      nextQuestion: vi.fn().mockResolvedValueOnce(question).mockResolvedValueOnce(second),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(screen.getByRole("button", { name: /start interview/i }));
+    await screen.findByText(question.prompt);
+
+    expect(screen.getByText(/python/i)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/your answer/i), "It is a mutex.");
+    await user.click(screen.getByRole("button", { name: /submit answer/i }));
+    await screen.findByTestId("score");
+    await user.click(screen.getByRole("button", { name: /next question/i }));
+
+    await screen.findByText(second.prompt);
+    expect(screen.getByText(/databases and sql/i)).toBeInTheDocument();
   });
 });
 
@@ -273,6 +317,24 @@ describe("resuming", () => {
     expect(await screen.findByTestId("score")).toHaveTextContent("4 / 5");
     expect(screen.getByRole("button", { name: /next question/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/your answer/i)).not.toBeInTheDocument();
+  });
+
+  it("brings a resumed interview's topics back to the picker", async () => {
+    localStorage.setItem(STORAGE_KEY, "s1");
+    const api = fakeApi({
+      resumeSession: vi
+        .fn()
+        .mockResolvedValue({ ...sessionState, topics: ["react", "security"] }),
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await screen.findByText(question.prompt);
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+
+    expect(screen.getByRole("checkbox", { name: "React" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Security" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Python" })).not.toBeChecked();
   });
 
   it("remembers the session id when an interview starts", async () => {
@@ -466,7 +528,7 @@ describe("the model picker", () => {
     await user.click(screen.getByRole("button", { name: /start interview/i }));
     await screen.findByText(question.prompt);
 
-    expect(api.startSession).toHaveBeenCalledWith("python", "mid", "anthropic");
+    expect(api.startSession).toHaveBeenCalledWith(["python"], "mid", "anthropic");
   });
 
   it("says what the hosted model costs once it is chosen", async () => {

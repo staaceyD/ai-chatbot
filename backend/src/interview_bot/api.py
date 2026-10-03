@@ -11,6 +11,7 @@ from interview_bot.deps import (
 )
 from interview_bot.domain import Explanation, Grade, Question
 from interview_bot.interviewer import Interviewer
+from interview_bot.rotation import next_topic
 from interview_bot.schemas import (
     AnswerRequest,
     HealthResponse,
@@ -64,7 +65,7 @@ def _as_response(question: Question) -> QuestionResponse:
 def _as_session(session: Session) -> SessionResponse:
     return SessionResponse(
         session_id=session.id,
-        topic=session.topic,
+        topics=session.topics,
         difficulty=session.difficulty,
         model_provider=session.model_provider,
     )
@@ -88,7 +89,7 @@ async def start_session(
     body: StartSessionRequest, store: SessionStoreDep, settings: SettingsDep
 ) -> SessionResponse:
     session = await store.create(
-        topic=body.topic,
+        topics=body.topics,
         difficulty=body.difficulty,
         model_provider=body.model_provider or settings.default_model_provider,
     )
@@ -101,7 +102,7 @@ async def resume_session(session_id: str, store: SessionStoreDep) -> SessionStat
     current = session.latest_question
     return SessionStateResponse(
         session_id=session.id,
-        topic=session.topic,
+        topics=session.topics,
         difficulty=session.difficulty,
         model_provider=session.model_provider,
         current_question=_as_response(current) if current else None,
@@ -148,7 +149,9 @@ async def next_question(
 
     async with explainer.foreground():
         question = await interviewer.generate_question(
-            topic=session.topic,
+            # Shuffled across the session's topics, so a mixed interview jumps
+            # between them instead of working through one at a time.
+            topic=next_topic(session.topics, session.asked_topics),
             difficulty=session.difficulty,
             avoid=session.asked_prompts,
         )

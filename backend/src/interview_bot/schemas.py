@@ -16,8 +16,18 @@ def _non_blank(value: str) -> str:
 Answer = Annotated[str, Field(max_length=5000), AfterValidator(_non_blank)]
 
 
+def _deduplicated(topics: list[Topic]) -> list[Topic]:
+    """The same topic twice would only weight the rotation towards it."""
+    return list(dict.fromkeys(topics))
+
+
+# One topic is an interview about it; several make a mixed interview, with the
+# questions rotating over them.
+Topics = Annotated[list[Topic], Field(min_length=1), AfterValidator(_deduplicated)]
+
+
 class StartSessionRequest(BaseModel):
-    topic: Topic
+    topics: Topics
     difficulty: Difficulty = Difficulty.MID
     model_provider: ModelProvider | None = None
 
@@ -28,7 +38,7 @@ class SwitchModelRequest(BaseModel):
 
 class SessionResponse(BaseModel):
     session_id: str
-    topic: Topic
+    topics: list[Topic]
     difficulty: Difficulty
     model_provider: str
 
@@ -44,7 +54,7 @@ class QuestionResponse(BaseModel):
 
 class SessionStateResponse(BaseModel):
     session_id: str
-    topic: Topic
+    topics: list[Topic]
     difficulty: Difficulty
     model_provider: str
     current_question: QuestionResponse | None

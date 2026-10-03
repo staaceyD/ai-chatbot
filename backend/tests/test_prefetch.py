@@ -35,7 +35,7 @@ def written(store: InMemorySessionStore, session_id: str):
 
 
 async def start_session(api: AsyncClient) -> str:
-    response = await api.post("/sessions", json={"topic": "python", "difficulty": "mid"})
+    response = await api.post("/sessions", json={"topics": ["python"], "difficulty": "mid"})
     return response.json()["session_id"]
 
 

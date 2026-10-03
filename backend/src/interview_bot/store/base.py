@@ -11,7 +11,7 @@ DEFAULT_MODEL_PROVIDER = "ollama"
 @dataclass
 class Session:
     id: str
-    topic: Topic
+    topics: list[Topic]
     difficulty: Difficulty
     # The model provider this interview uses. Stored per session so a resume
     # comes back on the model it was running on, and so switching model is a
@@ -24,6 +24,11 @@ class Session:
     @property
     def asked_prompts(self) -> list[str]:
         return [question.prompt for question in self.questions.values()]
+
+    @property
+    def asked_topics(self) -> list[Topic]:
+        """The topic of each question asked so far, oldest first."""
+        return [question.topic for question in self.questions.values()]
 
     @property
     def latest_question(self) -> Question | None:
@@ -60,7 +65,11 @@ class SessionStore(Protocol):
     async def initialize(self) -> None: ...
 
     async def create(
-        self, *, topic: Topic, difficulty: Difficulty, model_provider: str = DEFAULT_MODEL_PROVIDER
+        self,
+        *,
+        topics: list[Topic],
+        difficulty: Difficulty,
+        model_provider: str = DEFAULT_MODEL_PROVIDER,
     ) -> Session: ...
 
     async def get(self, session_id: str) -> Session | None: ...
