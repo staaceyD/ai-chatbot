@@ -80,6 +80,9 @@ The worked answer is written in the background while you are reading the
 question and typing, so by the time you click there is usually nothing left to
 wait for.
 
+**Note to self** opens a box to jot down a topic you want to learn properly
+later, and the notes pile up under the **Notes** tab — see [Notes](#notes).
+
 Refreshing the page picks the interview back up where you left it. Use
 **Start over** to drop it and choose different topics.
 
@@ -195,6 +198,22 @@ Switching model mid-interview drops a worked answer being written ahead: it is
 the old model's, nobody has asked for it yet, and the next request writes it
 again on the new one. An answer somebody is already waiting on is left to
 finish.
+
+### Notes
+
+A question you could not answer is usually the one worth reading up on, and
+that is the moment you know it. **Note to self** takes that down without
+leaving the interview: it opens a box, you type a line, and the note lands
+under the **Notes** tab, tagged with the topic of the question that was on
+screen and the date. The button is there before an interview starts too, and
+it stays live while the model is thinking — waiting for a grade is when the
+thought tends to arrive.
+
+Notes live in the browser's `localStorage`, not in the backend: they are yours
+rather than the interview's, so **Start over** keeps them, deleting
+`interview_bot.db` keeps them, and they come back after a refresh. Each one has
+a **Delete** button, which is the only thing that removes it. They do not
+follow you to another browser or machine.
 
 ## Choosing the model
 
