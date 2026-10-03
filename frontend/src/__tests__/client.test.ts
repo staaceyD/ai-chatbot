@@ -13,19 +13,19 @@ afterEach(() => {
 });
 
 describe("startSession", () => {
-  it("posts the topic and difficulty", async () => {
+  it("posts the topics and difficulty", async () => {
     const fetchSpy = mockFetch({
-      json: async () => ({ session_id: "s1", topic: "python", difficulty: "mid" }),
+      json: async () => ({ session_id: "s1", topics: ["python", "databases"], difficulty: "mid" }),
     });
 
-    const session = await api.startSession("python", "mid", "ollama");
+    const session = await api.startSession(["python", "databases"], "mid", "ollama");
 
     expect(session.session_id).toBe("s1");
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("http://localhost:8000/sessions");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({
-      topic: "python",
+      topics: ["python", "databases"],
       difficulty: "mid",
       model_provider: "ollama",
     });
@@ -37,7 +37,7 @@ describe("switchModel", () => {
     const fetchSpy = mockFetch({
       json: async () => ({
         session_id: "s1",
-        topic: "python",
+        topics: ["python"],
         difficulty: "mid",
         model_provider: "anthropic",
       }),
@@ -87,7 +87,7 @@ describe("resumeSession", () => {
     const fetchSpy = mockFetch({
       json: async () => ({
         session_id: "s1",
-        topic: "python",
+        topics: ["python"],
         difficulty: "mid",
         current_question: null,
         current_grade: null,
@@ -152,7 +152,7 @@ describe("error handling", () => {
       vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
     );
 
-    await expect(api.startSession("react", "mid", "ollama")).rejects.toThrow(
+    await expect(api.startSession(["react"], "mid", "ollama")).rejects.toThrow(
       "Cannot reach the server",
     );
   });

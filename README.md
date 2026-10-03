@@ -2,8 +2,9 @@
 
 A local chatbot for practising software engineering interview questions —
 languages and frameworks as well as engineering fundamentals such as system
-design, databases, algorithms and data structures. Answers are graded by a
-model — either one running on your own machine, or a hosted Claude model if
+design, databases, algorithms and data structures. Tick several topics and the
+questions jump between them, shuffled, the way a real interview does. Answers
+are graded by a model — either one running on your own machine, or a hosted Claude model if
 you would rather have the speed.
 
 ## Requirements
@@ -56,10 +57,14 @@ cd frontend
 npm run dev
 ```
 
-Open http://localhost:5173 and pick a topic. The API is on
+Open http://localhost:5173 and tick the topics you want. The API is on
 http://localhost:8000, with interactive docs on http://localhost:8000/docs.
 
-A **Model** dropdown above the topic sits over the whole interview. It starts
+Ticking more than one topic makes it a mixed interview: each question comes
+from one of them, shuffled, and the tag above the question says which — see
+[Mixed topics](#mixed-topics).
+
+A **Model** dropdown above the topics sits over the whole interview. It starts
 on **Ollama (free)**, the model on your own machine, and switching it to
 **Claude** moves the interview onto the hosted model from the next question
 onwards — see [Running against a hosted model](#running-against-a-hosted-model)
@@ -76,7 +81,7 @@ question and typing, so by the time you click there is usually nothing left to
 wait for.
 
 Refreshing the page picks the interview back up where you left it. Use
-**Start over** to drop it and choose a different topic.
+**Start over** to drop it and choose different topics.
 
 On the local model, expect each question and each grade to take a few
 seconds, and a worked answer to take longer — it is several times as much
@@ -95,7 +100,7 @@ Start a session, ask for a question, then answer it:
 ```sh
 SESSION=$(curl -s -X POST http://localhost:8000/sessions \
   -H 'content-type: application/json' \
-  -d '{"topic":"python","difficulty":"mid"}' | jq -r .session_id)
+  -d '{"topics":["python"],"difficulty":"mid"}' | jq -r .session_id)
 
 curl -s -X POST http://localhost:8000/sessions/$SESSION/questions | jq
 
@@ -111,7 +116,9 @@ curl -s -X POST \
   http://localhost:8000/sessions/$SESSION/questions/<question id>/explanation | jq
 ```
 
-Difficulties are `junior`, `mid` and `senior`. Topics are:
+`topics` is a list, and an interview can draw on as many as you like — one is
+an interview about that topic, several make a mixed one. Difficulties are
+`junior`, `mid` and `senior`. Topics are:
 
 | Languages and frameworks | Engineering fundamentals |
 | --- | --- |
@@ -119,6 +126,13 @@ Difficulties are `junior`, `mid` and `senior`. Topics are:
 | `javascript` | `data_structures`, `concurrency`, `networking` |
 | `typescript` | `api_design`, `security`, `testing` |
 | `react` | `operating_systems`, `devops` |
+
+```sh
+# One mixed interview over three subjects
+curl -s -X POST http://localhost:8000/sessions \
+  -H 'content-type: application/json' \
+  -d '{"topics":["system_design","databases","concurrency"]}' | jq
+```
 
 Each topic carries its own scope in `backend/src/interview_bot/prompts.py`
 (`TOPIC_SCOPES`), which is what keeps a question about, say, `databases` on
@@ -128,7 +142,9 @@ topic means adding it to `Topic`, to `TOPIC_LABELS` and `TOPIC_SCOPES`, and to
 
 Sessions are stored in a SQLite file (`backend/interview_bot.db` by default)
 and survive a restart, so an interview keeps going across a backend reload.
-Delete the file to start clean.
+Delete the file to start clean. A session written by a version before mixed
+topics is migrated when the file opens: the interview it was on comes back as
+the one topic it covers.
 
 `GET /sessions/{id}` returns a session with the question you were last asked,
 the grade for it if you already answered, and the worked answer if you already
@@ -141,6 +157,25 @@ which keeps the endpoint from becoming a way to read the answer instead of
 attempting it — including when it was already written ahead. A resume is held
 to the same rule: an ungraded question comes back without its worked answer,
 even when one is already sitting in the store.
+
+### Mixed topics
+
+Which topic a question comes from is decided when it is asked, in
+`backend/src/interview_bot/rotation.py`, from the topics of the questions
+already asked. Two rules shape it:
+
+- **Shuffled, not in order.** Working through the list would make the interview
+  predictable after the first round.
+- **Every topic once before any topic twice.** Shuffling alone would ask four
+  Python questions before touching databases. The choice is only among the
+  topics asked least so far, so a session is a shuffled round of the chosen
+  topics, then another — and the topic that closed one round never opens the
+  next, which would read as a repeat.
+
+The question is still generated for one topic at a time, with that topic's
+scope: a prompt naming three subjects at once produces a question about none of
+them. Previous questions are sent to the model whatever topic they came from, so
+a mixed interview does not circle back to the same ground from another angle.
 
 ### Writing answers ahead
 
@@ -170,7 +205,7 @@ It is chosen when the session starts and can be changed at any point:
 # Start an interview on a specific model
 curl -s -X POST http://localhost:8000/sessions \
   -H 'content-type: application/json' \
-  -d '{"topic":"python","difficulty":"mid","model_provider":"anthropic"}' | jq
+  -d '{"topics":["python"],"difficulty":"mid","model_provider":"anthropic"}' | jq
 
 # Move a running interview onto another one
 curl -s -X PATCH http://localhost:8000/sessions/$SESSION \

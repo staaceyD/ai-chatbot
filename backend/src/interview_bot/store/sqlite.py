@@ -9,7 +9,8 @@ from interview_bot.store.base import DEFAULT_MODEL_PROVIDER, Session, new_sessio
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY,
-    topic      TEXT NOT NULL,
+    -- A JSON array: an interview can draw on several topics at once.
+    topics     TEXT NOT NULL,
     difficulty TEXT NOT NULL,
     model_provider    TEXT NOT NULL DEFAULT '{DEFAULT_MODEL_PROVIDER}'
 );
@@ -66,13 +67,18 @@ class SQLiteSessionStore:
         """Bring a file written by an older version up to the current schema.
 
         CREATE TABLE IF NOT EXISTS leaves an existing table alone, so a column
-        added later has to be added to the file as well, or every read of it
-        fails.
+        added or changed later has to be brought to the file as well, or every
+        read of it fails.
         """
         db = self._connection()
         async with db.execute("PRAGMA table_info(sessions)") as cursor:
             columns = {row[1] for row in await cursor.fetchall()}
 
+        await self._migrate_model_provider(columns)
+        await self._migrate_topics(columns)
+
+    async def _migrate_model_provider(self, columns: set[str]) -> None:
+        db = self._connection()
         if "model_provider" in columns:
             return
         if "backend" in columns:
@@ -84,15 +90,37 @@ class SQLiteSessionStore:
             f" DEFAULT '{DEFAULT_MODEL_PROVIDER}'"
         )
 
+    async def _migrate_topics(self, columns: set[str]) -> None:
+        """A file from when a session had one topic rather than a list of them."""
+        if "topics" in columns:
+            return
+        db = self._connection()
+        # Renamed rather than replaced, so an interview started before mixed
+        # topics existed keeps the one it was on — as a list of that one.
+        await db.execute("ALTER TABLE sessions RENAME COLUMN topic TO topics")
+        await db.execute("UPDATE sessions SET topics = json_array(topics)")
+
     async def create(
-        self, *, topic: Topic, difficulty: Difficulty, model_provider: str = DEFAULT_MODEL_PROVIDER
+        self,
+        *,
+        topics: list[Topic],
+        difficulty: Difficulty,
+        model_provider: str = DEFAULT_MODEL_PROVIDER,
     ) -> Session:
         session = Session(
-            id=new_session_id(), topic=topic, difficulty=difficulty, model_provider=model_provider
+            id=new_session_id(),
+            topics=list(topics),
+            difficulty=difficulty,
+            model_provider=model_provider,
         )
         await self._connection().execute(
-            "INSERT INTO sessions (id, topic, difficulty, model_provider) VALUES (?, ?, ?, ?)",
-            (session.id, session.topic.value, session.difficulty.value, session.model_provider),
+            "INSERT INTO sessions (id, topics, difficulty, model_provider) VALUES (?, ?, ?, ?)",
+            (
+                session.id,
+                json.dumps([topic.value for topic in session.topics]),
+                session.difficulty.value,
+                session.model_provider,
+            ),
         )
         await self._connection().commit()
         return session
@@ -106,7 +134,7 @@ class SQLiteSessionStore:
     async def get(self, session_id: str) -> Session | None:
         db = self._connection()
         async with db.execute(
-            "SELECT topic, difficulty, model_provider FROM sessions WHERE id = ?", (session_id,)
+            "SELECT topics, difficulty, model_provider FROM sessions WHERE id = ?", (session_id,)
         ) as cursor:
             row = await cursor.fetchone()
         if row is None:
@@ -114,7 +142,7 @@ class SQLiteSessionStore:
 
         session = Session(
             id=session_id,
-            topic=Topic(row[0]),
+            topics=[Topic(topic) for topic in json.loads(row[0])],
             difficulty=Difficulty(row[1]),
             model_provider=row[2],
         )

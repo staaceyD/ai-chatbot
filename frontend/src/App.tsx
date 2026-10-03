@@ -10,7 +10,7 @@ import { TopicPicker } from "./components/TopicPicker";
 import { forgetSession, recallSession, rememberSession } from "./storage";
 
 export function App({ api = defaultApi }: { api?: Api }) {
-  const [topic, setTopic] = useState<Topic>("python");
+  const [topics, setTopics] = useState<Topic[]>(["python"]);
   const [difficulty, setDifficulty] = useState<Difficulty>("mid");
   // The local model to begin with: nothing is spent until this is changed.
   const [modelProvider, setModelProvider] = useState<string>("ollama");
@@ -45,7 +45,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
           return;
         }
         setSessionId(state.session_id);
-        setTopic(state.topic);
+        setTopics(state.topics);
         setDifficulty(state.difficulty);
         setModelProvider(state.model_provider);
         setQuestion(state.current_question);
@@ -83,7 +83,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   // screen never blanks out while the model is thinking.
   const start = () =>
     run(async () => {
-      const session = await api.startSession(topic, difficulty, modelProvider);
+      const session = await api.startSession(topics, difficulty, modelProvider);
       const first = await api.nextQuestion(session.session_id);
       rememberSession(session.session_id);
       setSessionId(session.session_id);
@@ -152,10 +152,10 @@ export function App({ api = defaultApi }: { api?: Api }) {
 
       {sessionId === null ? (
         <TopicPicker
-          topic={topic}
+          topics={topics}
           difficulty={difficulty}
           disabled={busy}
-          onTopicChange={setTopic}
+          onTopicsChange={setTopics}
           onDifficultyChange={setDifficulty}
           onStart={start}
         />

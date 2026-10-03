@@ -12,10 +12,17 @@ class InMemorySessionStore:
         return None
 
     async def create(
-        self, *, topic: Topic, difficulty: Difficulty, model_provider: str = DEFAULT_MODEL_PROVIDER
+        self,
+        *,
+        topics: list[Topic],
+        difficulty: Difficulty,
+        model_provider: str = DEFAULT_MODEL_PROVIDER,
     ) -> Session:
         session = Session(
-            id=new_session_id(), topic=topic, difficulty=difficulty, model_provider=model_provider
+            id=new_session_id(),
+            topics=list(topics),
+            difficulty=difficulty,
+            model_provider=model_provider,
         )
         self._sessions[session.id] = session
         return session

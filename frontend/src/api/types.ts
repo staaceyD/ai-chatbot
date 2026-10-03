@@ -30,6 +30,13 @@ export const TOPIC_GROUPS = [
 
 export type Topic = (typeof TOPIC_GROUPS)[number]["topics"][number]["value"];
 
+// Every topic, flattened, in the order the picker shows them. A selection is
+// kept in this order rather than the order it was clicked, so an interview
+// reads back the same however it was picked.
+export const TOPICS: readonly Topic[] = TOPIC_GROUPS.flatMap((group) =>
+  group.topics.map((topic) => topic.value),
+);
+
 export const TOPIC_LABELS: Record<Topic, string> = Object.fromEntries(
   TOPIC_GROUPS.flatMap((group) => group.topics.map((topic) => [topic.value, topic.label])),
 ) as Record<Topic, string>;
@@ -50,7 +57,7 @@ export type Difficulty = (typeof DIFFICULTIES)[number];
 
 export type Session = {
   session_id: string;
-  topic: Topic;
+  topics: Topic[];
   difficulty: Difficulty;
   model_provider: string;
 };
@@ -82,7 +89,7 @@ export type Explanation = {
 
 export type SessionState = {
   session_id: string;
-  topic: Topic;
+  topics: Topic[];
   difficulty: Difficulty;
   model_provider: string;
   current_question: Question | null;

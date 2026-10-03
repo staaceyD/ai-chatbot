@@ -88,7 +88,7 @@ def interviewer(llm: GatedClient) -> Interviewer:
 
 
 async def a_session(store: InMemorySessionStore, question: Question = QUESTION) -> str:
-    session = await store.create(topic=Topic.PYTHON, difficulty=Difficulty.MID)
+    session = await store.create(topics=[Topic.PYTHON], difficulty=Difficulty.MID)
     await store.add_question(session.id, question)
     return session.id
 

@@ -7,7 +7,7 @@ from replies import explanation_reply, grade_reply, question_reply
 
 
 async def start_session(api: AsyncClient, topic: str = "python") -> str:
-    response = await api.post("/sessions", json={"topic": topic, "difficulty": "mid"})
+    response = await api.post("/sessions", json={"topics": [topic], "difficulty": "mid"})
     assert response.status_code == 201
     return response.json()["session_id"]
 
@@ -64,7 +64,7 @@ async def test_resume_returns_the_question_in_progress(api: AsyncClient, llm: Ec
     assert resumed.status_code == 200
     assert resumed.json() == {
         "session_id": session_id,
-        "topic": "python",
+        "topics": ["python"],
         "difficulty": "mid",
         "model_provider": "echo",
         "current_question": asked,
@@ -163,7 +163,7 @@ async def test_a_resumed_question_can_still_be_answered(api: AsyncClient, llm: E
 
 
 async def test_session_defaults_to_mid_difficulty(api: AsyncClient) -> None:
-    response = await api.post("/sessions", json={"topic": "react"})
+    response = await api.post("/sessions", json={"topics": ["react"]})
 
     assert response.status_code == 201
     assert response.json()["difficulty"] == "mid"
@@ -171,14 +171,14 @@ async def test_session_defaults_to_mid_difficulty(api: AsyncClient) -> None:
 
 @pytest.mark.parametrize("topic", [topic.value for topic in Topic])
 async def test_supported_topics(api: AsyncClient, topic: str) -> None:
-    response = await api.post("/sessions", json={"topic": topic})
+    response = await api.post("/sessions", json={"topics": [topic]})
 
     assert response.status_code == 201
-    assert response.json()["topic"] == topic
+    assert response.json()["topics"] == [topic]
 
 
 async def test_unsupported_topic_is_rejected(api: AsyncClient) -> None:
-    response = await api.post("/sessions", json={"topic": "cobol"})
+    response = await api.post("/sessions", json={"topics": ["cobol"]})
 
     assert response.status_code == 422
 
